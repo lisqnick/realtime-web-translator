@@ -1,0 +1,61 @@
+import { getLanguageConfig } from "@/lib/languages/config";
+import { getScenarioById } from "@/lib/scenarios/config";
+import type { TranslationPrompt, TranslationPromptInput } from "@/types/translation";
+
+export function buildTranslationPrompt(input: TranslationPromptInput): TranslationPrompt {
+  const sourceLanguage =
+    getLanguageConfig(input.sourceLanguage)?.label ?? input.sourceLanguage;
+  const targetLanguage =
+    getLanguageConfig(input.targetLanguage)?.translationDisplayName ?? input.targetLanguage;
+  const scenario = getScenarioById(input.scenario);
+  const glossaryHints = input.glossaryHints ?? [];
+
+  const instructionLines = [
+    "You are a realtime subtitle translator.",
+    `Translate spoken ${sourceLanguage} into natural ${targetLanguage}.`,
+    "Output only the translated text in the target language.",
+    "Do not add labels, quotation marks, explanations, summaries, or notes.",
+    "Keep the speaker's tone and level of formality.",
+    "Be faithful and conservative. Do not embellish, soften, or expand the meaning.",
+    "If the source is incomplete, hesitant, or fragmentary, preserve that quality instead of over-completing it.",
+    "Use scenario hints only as weak preferences for terminology and tone.",
+    "If the source clearly does not belong to the selected scenario, still translate faithfully by original meaning.",
+  ];
+
+  if (scenario) {
+    instructionLines.push(`Selected scenario: ${scenario.label}.`);
+    instructionLines.push(`Scenario tone preference: ${scenario.tone}.`);
+
+    if (scenario.rules.length > 0) {
+      instructionLines.push(`Scenario rules: ${scenario.rules.join("；")}.`);
+    }
+  }
+
+  if (glossaryHints.length > 0) {
+    instructionLines.push(`Terminology hints: ${glossaryHints.join("；")}.`);
+    instructionLines.push(
+      "Prefer these terminology hints when they fit the source naturally, but never distort the original meaning.",
+    );
+  }
+
+  const inputSections = [
+    `Source language: ${sourceLanguage}`,
+    `Target language: ${targetLanguage}`,
+    scenario ? `Scenario: ${scenario.label}` : "Scenario: general",
+  ];
+
+  if (input.previousContext?.trim()) {
+    inputSections.push(
+      `Previous confirmed context (use only if it helps local coherence):\n${input.previousContext.trim()}`,
+    );
+  }
+
+  inputSections.push(`Current source segment:\n${input.text.trim()}`);
+  inputSections.push(`Return only the translation in ${targetLanguage}.`);
+
+  return {
+    instructions: instructionLines.join("\n"),
+    inputText: inputSections.join("\n\n"),
+    glossaryHints,
+  };
+}

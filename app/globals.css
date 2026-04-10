@@ -1,0 +1,87 @@
+:root {
+  --background: #edf1e8;
+  --background-strong: #e3eadf;
+  --surface: rgba(255, 255, 255, 0.88);
+  --surface-strong: #ffffff;
+  --foreground: #17221b;
+  --muted: #5d6d61;
+  --border: rgba(23, 34, 27, 0.11);
+  --accent: #1c7c54;
+  --accent-strong: #0f5e3c;
+  --warning: #a56b26;
+  --danger: #9b4032;
+  --shadow: 0 18px 48px rgba(18, 34, 24, 0.08);
+}
+
+html {
+  height: 100%;
+  color-scheme: light;
+}
+
+html,
+body {
+  max-width: 100vw;
+}
+
+body {
+  min-height: 100%;
+  color: var(--foreground);
+  background:
+    radial-gradient(circle at top left, rgba(28, 124, 84, 0.1), transparent 28%),
+    radial-gradient(circle at bottom right, rgba(165, 107, 38, 0.09), transparent 24%),
+    linear-gradient(180deg, var(--background) 0%, var(--background-strong) 100%);
+  font-family:
+    var(--font-ui),
+    "Hiragino Sans",
+    "Yu Gothic",
+    "PingFang SC",
+    "Noto Sans CJK SC",
+    "Microsoft YaHei",
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+  padding: 0;
+  margin: 0;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+code,
+pre {
+  font-family:
+    var(--font-mono),
+    "SFMono-Regular",
+    "SF Mono",
+    Consolas,
+    monospace;
+}
+
+::selection {
+  background: rgba(28, 124, 84, 0.18);
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}

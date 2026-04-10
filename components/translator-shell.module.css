@@ -1,0 +1,368 @@
+.shell {
+  display: flex;
+  justify-content: center;
+}
+
+.phoneFrame {
+  width: 100%;
+  max-width: 540px;
+  display: grid;
+  gap: 14px;
+}
+
+.header {
+  display: grid;
+  gap: 14px;
+  padding: 18px 18px 14px;
+  border: 1px solid var(--border);
+  border-radius: 28px;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: var(--shadow);
+}
+
+.headerTop {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.eyebrow {
+  color: var(--muted);
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.title {
+  margin-top: 4px;
+  font-size: 1.65rem;
+  line-height: 1.08;
+  letter-spacing: -0.05em;
+}
+
+.statusPill {
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: rgba(28, 124, 84, 0.08);
+  color: var(--accent-strong);
+  font-size: 0.8rem;
+  line-height: 1.4;
+  text-align: right;
+}
+
+.languageBar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+}
+
+.languageChip {
+  display: grid;
+  gap: 4px;
+  min-height: 72px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  background: var(--surface-strong);
+}
+
+.languageChip span {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.languageChip strong {
+  font-size: 1.02rem;
+}
+
+.swapButton {
+  width: 46px;
+  height: 46px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: rgba(23, 34, 27, 0.04);
+  color: var(--foreground);
+  font-size: 1.1rem;
+}
+
+.swapButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.headerMeta {
+  display: grid;
+  gap: 8px;
+}
+
+.scenarioField {
+  display: grid;
+  gap: 6px;
+}
+
+.scenarioField span {
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+
+.scenarioField select {
+  width: 100%;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--surface-strong);
+  color: var(--foreground);
+}
+
+.scenarioField select:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
+.scenarioHint {
+  color: var(--muted);
+  font-size: 0.92rem;
+  line-height: 1.6;
+}
+
+.errorBanner {
+  display: grid;
+  gap: 6px;
+  padding: 14px 16px;
+  border: 1px solid rgba(155, 64, 50, 0.2);
+  border-radius: 18px;
+  background: rgba(155, 64, 50, 0.08);
+}
+
+.errorBanner p {
+  color: var(--danger);
+  line-height: 1.6;
+}
+
+.feed {
+  display: grid;
+  gap: 12px;
+}
+
+.emptyState,
+.messageCard {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: var(--shadow);
+}
+
+.emptyState {
+  color: var(--muted);
+  line-height: 1.7;
+}
+
+.emptyTitle {
+  color: var(--foreground);
+  font-weight: 600;
+}
+
+.liveMessageCard {
+  border-color: rgba(28, 124, 84, 0.2);
+  background:
+    linear-gradient(180deg, rgba(28, 124, 84, 0.06), rgba(255, 255, 255, 0.94)),
+    var(--surface-strong);
+}
+
+.cardMeta {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.sourceBlock,
+.translationBlock {
+  display: grid;
+  gap: 8px;
+  padding: 12px 14px;
+  border-radius: 18px;
+  background: rgba(237, 241, 232, 0.72);
+}
+
+.translationBlock {
+  background: rgba(255, 255, 255, 0.88);
+  border: 1px solid rgba(23, 34, 27, 0.08);
+}
+
+.blockHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.blockLabel {
+  color: var(--muted);
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.blockState {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.sourceText,
+.translationText {
+  font-size: 1.02rem;
+  line-height: 1.85;
+  color: var(--foreground);
+  word-break: break-word;
+}
+
+.translationText {
+  color: rgba(23, 34, 27, 0.9);
+}
+
+.inlineError {
+  color: var(--danger);
+  font-size: 0.9rem;
+  line-height: 1.6;
+}
+
+.debugDetails {
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.78);
+  overflow: hidden;
+}
+
+.debugDetails summary {
+  cursor: pointer;
+  padding: 14px 16px;
+  color: var(--muted);
+  font-size: 0.9rem;
+  list-style: none;
+}
+
+.debugDetails summary::-webkit-details-marker {
+  display: none;
+}
+
+.debugContent {
+  padding: 0 16px 16px;
+}
+
+.debugList {
+  display: grid;
+  gap: 10px;
+}
+
+.debugList div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px dashed var(--border);
+}
+
+.debugList div:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.debugList dt {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.debugList dd {
+  max-width: 58%;
+  color: var(--foreground);
+  font-size: 0.84rem;
+  text-align: right;
+  word-break: break-word;
+}
+
+.toolbar {
+  position: sticky;
+  bottom: 12px;
+  display: grid;
+  grid-template-columns: 1.4fr 1fr 1fr;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.95);
+  box-shadow: 0 20px 40px rgba(18, 34, 24, 0.12);
+  backdrop-filter: blur(16px);
+}
+
+.toolbar button {
+  min-height: 48px;
+  padding: 0 16px;
+  border: 1px solid transparent;
+  border-radius: 16px;
+  font-weight: 600;
+}
+
+.toolbar button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.primaryButton {
+  background: var(--accent);
+  color: white;
+}
+
+.secondaryButton {
+  background: rgba(165, 107, 38, 0.12);
+  color: var(--warning);
+  border-color: rgba(165, 107, 38, 0.18);
+}
+
+.ghostButton {
+  background: rgba(23, 34, 27, 0.05);
+  color: var(--foreground);
+  border-color: var(--border);
+}
+
+@media (max-width: 600px) {
+  .phoneFrame {
+    max-width: none;
+  }
+
+  .header {
+    padding: 16px 16px 12px;
+    border-radius: 24px;
+  }
+
+  .title {
+    font-size: 1.45rem;
+  }
+
+  .statusPill {
+    max-width: 44%;
+    font-size: 0.74rem;
+  }
+
+  .languageBar {
+    gap: 8px;
+  }
+
+  .languageChip {
+    min-height: 66px;
+    padding: 12px 14px;
+  }
+
+  .toolbar {
+    bottom: 8px;
+  }
+}
