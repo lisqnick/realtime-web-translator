@@ -2,6 +2,7 @@ import type { ScenarioId, SupportedLanguageCode } from "@/types/config";
 import type {
   BubbleAggregationConfig,
   BubbleChunk,
+  BubbleDecisionLogEntry,
   BubbleDebugSnapshot,
   BubbleOpenReason,
   BubbleSnapshot,
@@ -17,6 +18,7 @@ const DEFAULT_BUBBLE_AGGREGATION_CONFIG: BubbleAggregationConfig = {
   maxChunksPerBubble: 5,
   correctionTailSize: 2,
 };
+const MAX_BUBBLE_DECISION_LOGS = 16;
 
 export function getDefaultBubbleAggregationConfig(): BubbleAggregationConfig {
   return DEFAULT_BUBBLE_AGGREGATION_CONFIG;
@@ -30,9 +32,11 @@ export function createEmptyBubbleSnapshot(): BubbleSnapshot {
       activeBubbleId: null,
       activeBubbleChunkCount: 0,
       lastChunkGapMs: null,
+      lastChunkGapBasis: null,
       lastOpenReason: null,
       activeBubbleIsTranslating: false,
       activeBubbleCorrectionCount: 0,
+      recentDecisions: [],
     },
   };
 }
@@ -65,6 +69,8 @@ export function buildBubbleSnapshot(input: {
   let currentBubble: TranslationBubble | null = null;
   let previousChunk: BubbleChunk | null = null;
   let lastChunkGapMs: number | null = null;
+  let lastChunkGapBasis: string | null = null;
+  const decisionLog: BubbleDecisionLogEntry[] = [];
 
   for (const transcriptSegment of transcriptSegments) {
     const translatedSegment =
@@ -75,35 +81,65 @@ export function buildBubbleSnapshot(input: {
       translatedSegment?.sourceLanguage ?? input.sourceLanguage;
     const chunkTargetLanguage =
       translatedSegment?.targetLanguage ?? input.targetLanguage;
-    const chunkGapMs =
-      previousChunk === null ? null : chunk.createdAt - previousChunk.createdAt;
+    const chunkGap = computeChunkGap(previousChunk, chunk);
 
-    if (chunkGapMs !== null) {
-      lastChunkGapMs = chunkGapMs;
+    if (chunkGap.gapMs !== null) {
+      lastChunkGapMs = chunkGap.gapMs;
+      lastChunkGapBasis = chunkGap.basis;
     }
 
-    const nextBubbleReason = decideBubbleBoundary({
+    const bubbleDecision = decideBubbleBoundary({
       currentBubble,
-      chunkGapMs,
+      chunkGapMs: chunkGap.gapMs,
       sourceLanguage: chunkSourceLanguage,
       targetLanguage: chunkTargetLanguage,
       scenario: chunkScenario,
       config,
     });
+    decisionLog.push({
+      chunkId: chunk.chunkId,
+      segmentId: chunk.segmentId,
+      sourceText: truncateSourceText(chunk.sourceText),
+      createdAt: chunk.createdAt,
+      finalizedAt: chunk.finalizedAt,
+      committedAt: chunk.committedAt,
+      speechStartedAt: chunk.speechStartedAt,
+      speechStoppedAt: chunk.speechStoppedAt,
+      previousChunkId: previousChunk?.chunkId ?? null,
+      computedGapMs: chunkGap.gapMs,
+      gapComputedFrom: chunkGap.basis,
+      currentActiveBubbleId: currentBubble?.bubbleId ?? null,
+      currentActiveBubbleChunkCount: currentBubble?.chunkCount ?? 0,
+      decision: bubbleDecision.decision,
+      reason: bubbleDecision.reason,
+    });
 
-    if (!currentBubble || nextBubbleReason !== null) {
+    if (bubbleDecision.decision === "create_new") {
       currentBubble = createBubble({
         firstChunk: chunk,
         sourceLanguage: chunkSourceLanguage,
         targetLanguage: chunkTargetLanguage,
         scenario: chunkScenario,
-        openedBy: nextBubbleReason ?? "initial",
+        openedBy: bubbleDecision.reason,
       });
       bubbles.push(currentBubble);
     } else {
-      currentBubble.sourceChunks.push(chunk);
-      currentBubble.chunkCount = currentBubble.sourceChunks.length;
-      currentBubble.updatedAt = Math.max(currentBubble.updatedAt, chunk.updatedAt);
+      const existingBubble: TranslationBubble | null = currentBubble;
+
+      if (!existingBubble) {
+        previousChunk = chunk;
+        continue;
+      }
+
+      existingBubble.sourceChunks.push(chunk);
+      existingBubble.chunkCount = existingBubble.sourceChunks.length;
+      existingBubble.updatedAt = Math.max(existingBubble.updatedAt, chunk.updatedAt);
+      currentBubble = existingBubble;
+    }
+
+    if (!currentBubble) {
+      previousChunk = chunk;
+      continue;
     }
 
     currentBubble.mergedSourceText = joinChunkText(
@@ -148,9 +184,11 @@ export function buildBubbleSnapshot(input: {
     activeBubbleId: activeBubble?.bubbleId ?? null,
     activeBubbleChunkCount: activeBubble?.chunkCount ?? 0,
     lastChunkGapMs,
+    lastChunkGapBasis,
     lastOpenReason: activeBubble?.openedBy ?? null,
     activeBubbleIsTranslating: activeBubble?.isTranslating ?? false,
     activeBubbleCorrectionCount: activeBubble?.correctionCount ?? 0,
+    recentDecisions: decisionLog.slice(-MAX_BUBBLE_DECISION_LOGS),
   };
 
   return {
@@ -195,6 +233,9 @@ function buildBubbleChunk(
       translatedSegment?.updatedAt ?? transcriptSegment.updatedAt,
     ),
     finalizedAt: transcriptSegment.finalizedAt,
+    committedAt: transcriptSegment.committedAt,
+    speechStartedAt: transcriptSegment.speechStartedAt,
+    speechStoppedAt: transcriptSegment.speechStoppedAt,
     sourceStatus: translatedSegment?.sourceStatus ?? transcriptSegment.status,
     translationStatus: translatedSegment?.translationStatus ?? "idle",
     translatedRevision: translatedSegment?.translatedRevision ?? null,
@@ -242,32 +283,59 @@ function decideBubbleBoundary(input: {
   targetLanguage: SupportedLanguageCode;
   scenario: ScenarioId;
   config: BubbleAggregationConfig;
-}): BubbleOpenReason | null {
+}): {
+  decision: "append_to_existing" | "create_new";
+  reason: BubbleOpenReason;
+} {
   if (!input.currentBubble) {
-    return "initial";
+    return {
+      decision: "create_new",
+      reason: "no_active_bubble",
+    };
+  }
+
+  if (input.currentBubble.status === "closed") {
+    return {
+      decision: "create_new",
+      reason: "bubble_closed",
+    };
   }
 
   if (
     input.currentBubble.sourceLanguage !== input.sourceLanguage ||
-    input.currentBubble.targetLanguage !== input.targetLanguage ||
-    input.currentBubble.scenario !== input.scenario
+    input.currentBubble.targetLanguage !== input.targetLanguage
   ) {
-    return "config_change";
+    return {
+      decision: "create_new",
+      reason: "language_changed",
+    };
+  }
+
+  if (input.currentBubble.scenario !== input.scenario) {
+    return {
+      decision: "create_new",
+      reason: "scenario_changed",
+    };
   }
 
   if (input.currentBubble.chunkCount >= input.config.maxChunksPerBubble) {
-    return "max_chunks";
-  }
-
-  if (input.chunkGapMs !== null && input.chunkGapMs < input.config.appendWithinMs) {
-    return null;
+    return {
+      decision: "create_new",
+      reason: "max_chunks_reached",
+    };
   }
 
   if (input.chunkGapMs !== null && input.chunkGapMs >= input.config.forceNewAfterMs) {
-    return "timeout";
+    return {
+      decision: "create_new",
+      reason: "gap_too_large",
+    };
   }
 
-  return null;
+  return {
+    decision: "append_to_existing",
+    reason: "other",
+  };
 }
 
 function deriveBubbleStatus(input: {
@@ -293,4 +361,80 @@ function joinChunkText(
     .map((chunk) => selector(chunk).trim())
     .filter(Boolean)
     .join("\n");
+}
+
+function computeChunkGap(previousChunk: BubbleChunk | null, nextChunk: BubbleChunk) {
+  if (!previousChunk) {
+    return {
+      gapMs: null,
+      basis: null,
+    };
+  }
+
+  const candidates: Array<{
+    start: number | null;
+    end: number | null;
+    basis: string;
+  }> = [
+    {
+      start: previousChunk.speechStoppedAt,
+      end: nextChunk.speechStartedAt,
+      basis: "previous.speechStoppedAt -> current.speechStartedAt",
+    },
+    {
+      start: previousChunk.speechStoppedAt,
+      end: nextChunk.committedAt,
+      basis: "previous.speechStoppedAt -> current.committedAt",
+    },
+    {
+      start: previousChunk.committedAt,
+      end: nextChunk.speechStartedAt,
+      basis: "previous.committedAt -> current.speechStartedAt",
+    },
+    {
+      start: previousChunk.committedAt,
+      end: nextChunk.committedAt,
+      basis: "previous.committedAt -> current.committedAt",
+    },
+    {
+      start: previousChunk.finalizedAt,
+      end: nextChunk.createdAt,
+      basis: "previous.finalizedAt -> current.createdAt",
+    },
+    {
+      start: previousChunk.createdAt,
+      end: nextChunk.createdAt,
+      basis: "previous.createdAt -> current.createdAt",
+    },
+  ];
+
+  for (const candidate of candidates) {
+    if (candidate.start === null || candidate.end === null) {
+      continue;
+    }
+
+    if (candidate.end < candidate.start) {
+      continue;
+    }
+
+    return {
+      gapMs: candidate.end - candidate.start,
+      basis: candidate.basis,
+    };
+  }
+
+  return {
+    gapMs: null,
+    basis: null,
+  };
+}
+
+function truncateSourceText(text: string) {
+  const normalized = text.replace(/\s+/g, " ").trim();
+
+  if (normalized.length <= 48) {
+    return normalized;
+  }
+
+  return `${normalized.slice(0, 48)}...`;
 }

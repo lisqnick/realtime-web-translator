@@ -98,12 +98,24 @@ export interface RealtimeTimelineEntry {
 }
 
 export type ParsedRealtimeEvent =
+  | ParsedTranscriptSpeechStartedEvent
+  | ParsedTranscriptSpeechStoppedEvent
   | ParsedTranscriptDeltaEvent
   | ParsedTranscriptSegmentEvent
   | ParsedTranscriptCompletedEvent
   | ParsedTranscriptCommittedEvent
   | ParsedTranscriptIgnoredEvent
   | ParsedTranscriptInvalidEvent;
+
+export interface ParsedTranscriptSpeechStartedEvent {
+  kind: "input_audio_buffer_speech_started";
+  type: "input_audio_buffer.speech_started";
+}
+
+export interface ParsedTranscriptSpeechStoppedEvent {
+  kind: "input_audio_buffer_speech_stopped";
+  type: "input_audio_buffer.speech_stopped";
+}
 
 export interface ParsedTranscriptDeltaEvent {
   kind: "transcript_delta";
@@ -158,6 +170,8 @@ export interface TranscriptSegment {
   updatedAt: number;
   finalizedAt: number | null;
   committedAt: number | null;
+  speechStartedAt: number | null;
+  speechStoppedAt: number | null;
 }
 
 export interface TranscriptStateSnapshot {

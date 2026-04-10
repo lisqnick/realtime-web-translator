@@ -340,6 +340,12 @@
   word-break: break-word;
 }
 
+.timelineText {
+  color: var(--foreground);
+  line-height: 1.5;
+  word-break: break-word;
+}
+
 .timelineEmpty {
   color: var(--muted);
   font-size: 0.84rem;

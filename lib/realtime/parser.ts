@@ -3,10 +3,26 @@ import type { ParsedRealtimeEvent, RealtimeServerEvent } from "@/types/realtime"
 const TRANSCRIPT_DELTA_EVENT = "conversation.item.input_audio_transcription.delta";
 const TRANSCRIPT_SEGMENT_EVENT = "conversation.item.input_audio_transcription.segment";
 const TRANSCRIPT_COMPLETED_EVENT = "conversation.item.input_audio_transcription.completed";
+const INPUT_AUDIO_BUFFER_SPEECH_STARTED_EVENT = "input_audio_buffer.speech_started";
+const INPUT_AUDIO_BUFFER_SPEECH_STOPPED_EVENT = "input_audio_buffer.speech_stopped";
 const INPUT_AUDIO_BUFFER_COMMITTED_EVENT = "input_audio_buffer.committed";
 
 export function parseRealtimeEvent(event: RealtimeServerEvent): ParsedRealtimeEvent {
   const type = typeof event.type === "string" ? event.type : "unknown";
+
+  if (type === INPUT_AUDIO_BUFFER_SPEECH_STARTED_EVENT) {
+    return {
+      kind: "input_audio_buffer_speech_started",
+      type,
+    };
+  }
+
+  if (type === INPUT_AUDIO_BUFFER_SPEECH_STOPPED_EVENT) {
+    return {
+      kind: "input_audio_buffer_speech_stopped",
+      type,
+    };
+  }
 
   if (type === TRANSCRIPT_DELTA_EVENT) {
     const itemId = readItemId(event);

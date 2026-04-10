@@ -6,7 +6,15 @@ import type {
 } from "@/types/translation";
 
 export type BubbleStatus = "live" | "stable" | "closed";
-export type BubbleOpenReason = "initial" | "timeout" | "max_chunks" | "config_change";
+export type BubbleOpenReason =
+  | "no_active_bubble"
+  | "gap_too_large"
+  | "max_chunks_reached"
+  | "scenario_changed"
+  | "language_changed"
+  | "bubble_closed"
+  | "other";
+export type BubbleDecision = "append_to_existing" | "create_new";
 
 export interface BubbleChunk {
   chunkId: string;
@@ -18,12 +26,33 @@ export interface BubbleChunk {
   createdAt: number;
   updatedAt: number;
   finalizedAt: number | null;
+  committedAt: number | null;
+  speechStartedAt: number | null;
+  speechStoppedAt: number | null;
   sourceStatus: SourceSegmentStatus;
   translationStatus: SegmentTranslationStatus;
   translatedRevision: number | null;
   activeTranslationRevision: number | null;
   triggerReason: TranslationTriggerReason | null;
   errorMessage: string | null;
+}
+
+export interface BubbleDecisionLogEntry {
+  chunkId: string;
+  segmentId: string;
+  sourceText: string;
+  createdAt: number;
+  finalizedAt: number | null;
+  committedAt: number | null;
+  speechStartedAt: number | null;
+  speechStoppedAt: number | null;
+  previousChunkId: string | null;
+  computedGapMs: number | null;
+  gapComputedFrom: string | null;
+  currentActiveBubbleId: string | null;
+  currentActiveBubbleChunkCount: number;
+  decision: BubbleDecision;
+  reason: BubbleOpenReason;
 }
 
 export interface TranslationBubble {
@@ -48,9 +77,11 @@ export interface BubbleDebugSnapshot {
   activeBubbleId: string | null;
   activeBubbleChunkCount: number;
   lastChunkGapMs: number | null;
+  lastChunkGapBasis: string | null;
   lastOpenReason: BubbleOpenReason | null;
   activeBubbleIsTranslating: boolean;
   activeBubbleCorrectionCount: number;
+  recentDecisions: BubbleDecisionLogEntry[];
 }
 
 export interface BubbleSnapshot {

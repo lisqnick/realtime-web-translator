@@ -9,6 +9,10 @@ interface InternalTranscriptState {
   finalizedSegments: Map<string, TranscriptSegment>;
   orderedItemIds: string[];
   itemCommittedAt: Map<string, number>;
+  itemSpeechStartedAt: Map<string, number>;
+  itemSpeechStoppedAt: Map<string, number>;
+  pendingSpeechStartedAt: number | null;
+  pendingSpeechStoppedAt: number | null;
 }
 
 export interface TranscriptBuffer {
@@ -63,6 +67,10 @@ function createEmptyInternalState(): InternalTranscriptState {
     finalizedSegments: new Map(),
     orderedItemIds: [],
     itemCommittedAt: new Map(),
+    itemSpeechStartedAt: new Map(),
+    itemSpeechStoppedAt: new Map(),
+    pendingSpeechStartedAt: null,
+    pendingSpeechStoppedAt: null,
   };
 }
 
@@ -75,12 +83,45 @@ function applyParsedRealtimeEvent(
     return state;
   }
 
+  if (event.kind === "input_audio_buffer_speech_started") {
+    state.pendingSpeechStartedAt = timestamp;
+    state.pendingSpeechStoppedAt = null;
+    return state;
+  }
+
+  if (event.kind === "input_audio_buffer_speech_stopped") {
+    state.pendingSpeechStoppedAt = timestamp;
+    return state;
+  }
+
   if (event.kind === "input_audio_buffer_committed") {
     ensureOrderedItemId(state, event.itemId, event.previousItemId);
     state.itemCommittedAt.set(event.itemId, timestamp);
 
+    if (state.pendingSpeechStartedAt !== null) {
+      state.itemSpeechStartedAt.set(event.itemId, state.pendingSpeechStartedAt);
+    }
+
+    if (state.pendingSpeechStoppedAt !== null) {
+      state.itemSpeechStoppedAt.set(event.itemId, state.pendingSpeechStoppedAt);
+    }
+
     updateCommittedTimestamp(state.liveSegments, event.itemId, timestamp);
     updateCommittedTimestamp(state.finalizedSegments, event.itemId, timestamp);
+    updateSpeechBoundaryTimestamps(
+      state.liveSegments,
+      event.itemId,
+      state.itemSpeechStartedAt.get(event.itemId) ?? null,
+      state.itemSpeechStoppedAt.get(event.itemId) ?? null,
+    );
+    updateSpeechBoundaryTimestamps(
+      state.finalizedSegments,
+      event.itemId,
+      state.itemSpeechStartedAt.get(event.itemId) ?? null,
+      state.itemSpeechStoppedAt.get(event.itemId) ?? null,
+    );
+    state.pendingSpeechStartedAt = null;
+    state.pendingSpeechStoppedAt = null;
 
     return state;
   }
@@ -108,6 +149,14 @@ function applyParsedRealtimeEvent(
       finalizedAt: null,
       committedAt:
         previousSegment?.committedAt ?? state.itemCommittedAt.get(event.itemId) ?? null,
+      speechStartedAt:
+        previousSegment?.speechStartedAt ??
+        state.itemSpeechStartedAt.get(event.itemId) ??
+        state.pendingSpeechStartedAt,
+      speechStoppedAt:
+        previousSegment?.speechStoppedAt ??
+        state.itemSpeechStoppedAt.get(event.itemId) ??
+        state.pendingSpeechStoppedAt,
     };
 
     state.liveSegments.set(segmentId, nextSegment);
@@ -127,6 +176,14 @@ function applyParsedRealtimeEvent(
     updatedAt: timestamp,
     finalizedAt: timestamp,
     committedAt: previousSegment?.committedAt ?? state.itemCommittedAt.get(event.itemId) ?? null,
+    speechStartedAt:
+      previousSegment?.speechStartedAt ??
+      state.itemSpeechStartedAt.get(event.itemId) ??
+      state.pendingSpeechStartedAt,
+    speechStoppedAt:
+      previousSegment?.speechStoppedAt ??
+      state.itemSpeechStoppedAt.get(event.itemId) ??
+      state.pendingSpeechStoppedAt,
   };
 
   state.liveSegments.delete(segmentId);
@@ -147,6 +204,25 @@ function updateCommittedTimestamp(
     segmentMap.set(segmentId, {
       ...segment,
       committedAt,
+    });
+  }
+}
+
+function updateSpeechBoundaryTimestamps(
+  segmentMap: Map<string, TranscriptSegment>,
+  itemId: string,
+  speechStartedAt: number | null,
+  speechStoppedAt: number | null,
+) {
+  for (const [segmentId, segment] of segmentMap.entries()) {
+    if (segment.itemId !== itemId) {
+      continue;
+    }
+
+    segmentMap.set(segmentId, {
+      ...segment,
+      speechStartedAt: speechStartedAt ?? segment.speechStartedAt,
+      speechStoppedAt: speechStoppedAt ?? segment.speechStoppedAt,
     });
   }
 }

@@ -64,6 +64,14 @@ function formatAttemptTimestamp(timestamp: number | null) {
   });
 }
 
+function formatDebugTimestamp(timestamp: number | null) {
+  if (timestamp === null) {
+    return "-";
+  }
+
+  return formatTimelineTimestamp(timestamp);
+}
+
 export function TranslatorShell({ runtimeDefaults }: TranslatorShellProps) {
   const [directionId, setDirectionId] = useState<UiLanguageDirectionId>(
     runtimeDefaults.defaultDirectionId,
@@ -360,6 +368,10 @@ export function TranslatorShell({ runtimeDefaults }: TranslatorShellProps) {
                   </dd>
                 </div>
                 <div>
+                  <dt>Gap Basis</dt>
+                  <dd>{state.bubbleDebug.lastChunkGapBasis ?? "-"}</dd>
+                </div>
+                <div>
                   <dt>Bubble Open Reason</dt>
                   <dd>{state.bubbleDebug.lastOpenReason ?? "-"}</dd>
                 </div>
@@ -463,6 +475,43 @@ export function TranslatorShell({ runtimeDefaults }: TranslatorShellProps) {
                 ) : (
                   <p className={styles.timelineEmpty}>
                     还没有捕获到本轮说话的关键事件。点击开始后连续说 3 到 5 秒，再展开这里查看顺序。
+                  </p>
+                )}
+              </div>
+
+              <div className={styles.timelinePanel}>
+                <p className={styles.timelineTitle}>最近若干条 bubble 判定</p>
+                {state.bubbleDebug.recentDecisions.length > 0 ? (
+                  <ol className={styles.timelineList}>
+                    {state.bubbleDebug.recentDecisions.map((entry, index) => (
+                      <li
+                        key={`${entry.segmentId}-${entry.createdAt}-${index}`}
+                        className={styles.timelineItem}
+                      >
+                        <code>{entry.segmentId}</code>
+                        <span>{entry.decision}</span>
+                        <span>{entry.reason}</span>
+                        <span>
+                          gap {entry.computedGapMs === null ? "-" : `${entry.computedGapMs}ms`}
+                        </span>
+                        <span>{entry.gapComputedFrom ?? "-"}</span>
+                        <span>prev {entry.previousChunkId ?? "-"}</span>
+                        <span>
+                          active {entry.currentActiveBubbleId ?? "-"} /{" "}
+                          {entry.currentActiveBubbleChunkCount}
+                        </span>
+                        <span>created {formatDebugTimestamp(entry.createdAt)}</span>
+                        <span>final {formatDebugTimestamp(entry.finalizedAt)}</span>
+                        <span>commit {formatDebugTimestamp(entry.committedAt)}</span>
+                        <span>speech start {formatDebugTimestamp(entry.speechStartedAt)}</span>
+                        <span>speech stop {formatDebugTimestamp(entry.speechStoppedAt)}</span>
+                        <span className={styles.timelineText}>{entry.sourceText || "-"}</span>
+                      </li>
+                    ))}
+                  </ol>
+                ) : (
+                  <p className={styles.timelineEmpty}>
+                    还没有生成 bubble 判定日志。先连续说几句短句，再回来看每个 chunk 是 append 还是 create。
                   </p>
                 )}
               </div>
