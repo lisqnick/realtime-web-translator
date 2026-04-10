@@ -53,6 +53,17 @@ function formatTimelineTimestamp(timestamp: number) {
   return `${timeLabel}.${date.getMilliseconds().toString().padStart(3, "0")}`;
 }
 
+function formatAttemptTimestamp(timestamp: number | null) {
+  if (timestamp === null) {
+    return "-";
+  }
+
+  const date = new Date(timestamp);
+  return date.toLocaleTimeString("ja-JP", {
+    hour12: false,
+  });
+}
+
 export function TranslatorShell({ runtimeDefaults }: TranslatorShellProps) {
   const [directionId, setDirectionId] = useState<UiLanguageDirectionId>(
     runtimeDefaults.defaultDirectionId,
@@ -120,6 +131,12 @@ export function TranslatorShell({ runtimeDefaults }: TranslatorShellProps) {
     micStatusLabel[state.micPermissionStatus]
   }`;
   const browserUnsupported = secureContext === "no" || getUserMediaType !== "function";
+  const startProbeLabel =
+    state.startAttemptCount === 0
+      ? "还没有点击开始"
+      : state.lastStartBlockedByStatus
+        ? `最近一次点击被拦截：${state.lastStartBlockedByStatus}`
+        : `最近一次点击已进入：${state.appStatus}`;
 
   return (
     <section className={styles.shell}>
@@ -175,6 +192,16 @@ export function TranslatorShell({ runtimeDefaults }: TranslatorShellProps) {
             <p className={styles.scenarioHint}>{currentScenario.description}</p>
           </div>
         </header>
+
+        <div className={styles.probeBanner}>
+          <strong>开始按钮诊断</strong>
+          <p>{startProbeLabel}</p>
+          <p>
+            点击次数 {state.startAttemptCount} · 最近一次 {formatAttemptTimestamp(
+              state.lastStartAttemptAt,
+            )} · 按钮{canStart ? "可点击" : "当前锁定"}
+          </p>
+        </div>
 
         {state.errorMessage ? (
           <div className={styles.errorBanner}>

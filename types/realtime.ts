@@ -195,6 +195,9 @@ export interface RealtimeControllerState {
   errorMessage: string | null;
   micAccessErrorName: string | null;
   micAccessErrorMessage: string | null;
+  startAttemptCount: number;
+  lastStartAttemptAt: number | null;
+  lastStartBlockedByStatus: TranslationAppStatus | null;
   liveSourceText: string;
   finalizedSegments: TranscriptSegment[];
   liveTranslationText: string;

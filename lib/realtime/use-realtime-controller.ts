@@ -99,6 +99,11 @@ type ControllerAction =
       type: "clear_error";
     }
   | {
+      type: "start_attempt";
+      timestamp: number;
+      blockedByStatus: RealtimeControllerState["appStatus"] | null;
+    }
+  | {
       type: "reset";
       preserveFinalizedSegments?: boolean;
       preserveTranslatedSegments?: boolean;
@@ -111,6 +116,9 @@ const initialState: RealtimeControllerState = {
   errorMessage: null,
   micAccessErrorName: null,
   micAccessErrorMessage: null,
+  startAttemptCount: 0,
+  lastStartAttemptAt: null,
+  lastStartBlockedByStatus: null,
   liveSourceText: "",
   finalizedSegments: [],
   liveTranslationText: "",
@@ -223,6 +231,13 @@ function reducer(
         micAccessErrorName: null,
         micAccessErrorMessage: null,
       };
+    case "start_attempt":
+      return {
+        ...state,
+        startAttemptCount: state.startAttemptCount + 1,
+        lastStartAttemptAt: action.timestamp,
+        lastStartBlockedByStatus: action.blockedByStatus,
+      };
     case "reset":
       return {
         ...state,
@@ -231,6 +246,9 @@ function reducer(
         errorMessage: null,
         micAccessErrorName: null,
         micAccessErrorMessage: null,
+        startAttemptCount: state.startAttemptCount,
+        lastStartAttemptAt: state.lastStartAttemptAt,
+        lastStartBlockedByStatus: state.lastStartBlockedByStatus,
         liveSourceText: "",
         finalizedSegments: action.preserveFinalizedSegments ? state.finalizedSegments : [],
         liveTranslationText: "",
@@ -739,7 +757,38 @@ export function useRealtimeController(options: {
       state.appStatus === "listening" ||
       state.appStatus === "stopping"
     ) {
+      dispatch({
+        type: "start_attempt",
+        timestamp: Date.now(),
+        blockedByStatus: state.appStatus,
+      });
+
+      if (debugPerfLogsRef.current) {
+        console.info("[ui] start ignored because controller is busy", {
+          appStatus: state.appStatus,
+        });
+      }
+
       return;
+    }
+
+    dispatch({
+      type: "start_attempt",
+      timestamp: Date.now(),
+      blockedByStatus: null,
+    });
+    dispatch({
+      type: "status",
+      appStatus: "requesting_mic",
+      connectionStatus: "disconnected",
+    });
+    dispatch({
+      type: "mic_permission",
+      micPermissionStatus: "prompt",
+    });
+
+    if (debugPerfLogsRef.current) {
+      console.info("[ui] start clicked, transitioning to requesting_mic");
     }
 
     const currentOperationId = operationIdRef.current + 1;
@@ -768,16 +817,6 @@ export function useRealtimeController(options: {
       });
       return;
     }
-
-    dispatch({
-      type: "status",
-      appStatus: "requesting_mic",
-      connectionStatus: "disconnected",
-    });
-    dispatch({
-      type: "mic_permission",
-      micPermissionStatus: "prompt",
-    });
 
     let microphoneGranted = false;
 
