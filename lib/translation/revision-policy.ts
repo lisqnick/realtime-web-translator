@@ -27,7 +27,7 @@ export function getDefaultRevisionPolicyConfig(): RevisionPolicyConfig {
 
 export function evaluateFinalRevision(options: {
   finalSegment: TranscriptSegment;
-  finalizedSegments: TranscriptSegment[];
+  bubbleTailSegmentIds: string[];
   translationSegment: TranslatedSegment | null;
   config?: Partial<RevisionPolicyConfig>;
 }): FinalRevisionDecision {
@@ -41,9 +41,8 @@ export function evaluateFinalRevision(options: {
       action: "retranslate",
       similarity: 0,
       withinRecentWindow: isWithinRecentWindow(
-        options.finalizedSegments,
+        options.bubbleTailSegmentIds,
         options.finalSegment.segmentId,
-        config.recentWindowSize,
       ),
     };
   }
@@ -53,9 +52,8 @@ export function evaluateFinalRevision(options: {
     options.finalSegment.text,
   );
   const withinRecentWindow = isWithinRecentWindow(
-    options.finalizedSegments,
+    options.bubbleTailSegmentIds,
     options.finalSegment.segmentId,
-    config.recentWindowSize,
   );
 
   if (similarity >= config.keepSimilarityThreshold) {
@@ -82,13 +80,8 @@ export function evaluateFinalRevision(options: {
 }
 
 function isWithinRecentWindow(
-  finalizedSegments: TranscriptSegment[],
+  bubbleTailSegmentIds: string[],
   segmentId: string,
-  recentWindowSize: number,
 ) {
-  const recentSegmentIds = finalizedSegments
-    .slice(Math.max(0, finalizedSegments.length - recentWindowSize))
-    .map((segment) => segment.segmentId);
-
-  return recentSegmentIds.includes(segmentId);
+  return bubbleTailSegmentIds.includes(segmentId);
 }

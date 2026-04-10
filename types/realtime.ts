@@ -4,6 +4,10 @@ import type {
   TranslationAppStatus,
 } from "@/types/config";
 import type {
+  BubbleDebugSnapshot,
+  TranslationBubble,
+} from "@/types/bubble";
+import type {
   TranslatedSegment,
   TranslationRequestState,
   TranslationTaskSummary,
@@ -198,6 +202,9 @@ export interface RealtimeControllerState {
   translationErrorMessage: string | null;
   activeTranslationTasks: TranslationTaskSummary[];
   recentRevisionCount: number;
+  bubbles: TranslationBubble[];
+  activeBubbleId: string | null;
+  bubbleDebug: BubbleDebugSnapshot;
   sessionId: string | null;
   sessionExpiresAt: number | null;
   sessionModel: string | null;

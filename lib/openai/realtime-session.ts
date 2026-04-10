@@ -8,6 +8,12 @@ import type {
 
 const OPENAI_REALTIME_CLIENT_SECRETS_URL =
   "https://api.openai.com/v1/realtime/client_secrets";
+const DEFAULT_REALTIME_TURN_DETECTION: RealtimeTurnDetectionConfig = {
+  type: "server_vad",
+  threshold: 0.5,
+  prefixPaddingMs: 300,
+  silenceDurationMs: 240,
+};
 
 interface CreateRealtimeSessionInput {
   sourceLanguage: SupportedLanguageCode;
@@ -103,12 +109,7 @@ export function mapSupportedLanguageToRealtimeLanguage(
 }
 
 export function buildRealtimeTurnDetectionConfig(): RealtimeTurnDetectionConfig {
-  return {
-    type: "server_vad",
-    threshold: 0.5,
-    prefixPaddingMs: 300,
-    silenceDurationMs: 280,
-  };
+  return DEFAULT_REALTIME_TURN_DETECTION;
 }
 
 export function buildRealtimeSessionConfig({ sourceLanguage }: CreateRealtimeSessionInput) {
@@ -212,9 +213,12 @@ export async function createRealtimeSession({
         mapSupportedLanguageToRealtimeLanguage(sourceLanguage),
       turnDetection: {
         type: "server_vad",
-        threshold: turnDetection?.threshold ?? 0.5,
-        prefixPaddingMs: turnDetection?.prefix_padding_ms ?? 300,
-        silenceDurationMs: turnDetection?.silence_duration_ms ?? 280,
+        threshold: turnDetection?.threshold ?? DEFAULT_REALTIME_TURN_DETECTION.threshold,
+        prefixPaddingMs:
+          turnDetection?.prefix_padding_ms ?? DEFAULT_REALTIME_TURN_DETECTION.prefixPaddingMs,
+        silenceDurationMs:
+          turnDetection?.silence_duration_ms ??
+          DEFAULT_REALTIME_TURN_DETECTION.silenceDurationMs,
       },
       include: normalizedSession.include ?? [],
     },

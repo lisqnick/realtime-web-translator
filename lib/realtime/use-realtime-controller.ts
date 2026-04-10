@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useReducer, useRef } from "react";
 
 import type { ScenarioId, SupportedLanguageCode } from "@/types/config";
+import type { BubbleSnapshot } from "@/types/bubble";
 import type {
   ParsedRealtimeEvent,
   RealtimeBrowserConnection,
@@ -13,7 +14,13 @@ import type {
   TranscriptStateSnapshot,
 } from "@/types/realtime";
 import type { TranslationTriggerReason } from "@/types/translation";
+import type { TranslationSegmentManagerSnapshot } from "@/lib/translation/segment-manager";
 
+import {
+  buildBubbleSnapshot,
+  createEmptyBubbleSnapshot,
+  getBubbleTailSegmentIds,
+} from "@/lib/bubbles/aggregator";
 import {
   createEmptyTranscriptPerfSnapshot,
   markTranscriptPerf,
@@ -72,6 +79,10 @@ type ControllerAction =
       timeline: RealtimeTimelineEntry[];
     }
   | {
+      type: "bubble_snapshot";
+      bubbleSnapshot: BubbleSnapshot;
+    }
+  | {
       type: "translation_snapshot";
       translationSnapshot: ReturnType<
         ReturnType<typeof createTranslationSegmentManager>["reset"]
@@ -105,6 +116,9 @@ const initialState: RealtimeControllerState = {
   translationErrorMessage: null,
   activeTranslationTasks: [],
   recentRevisionCount: 0,
+  bubbles: [],
+  activeBubbleId: null,
+  bubbleDebug: createEmptyBubbleSnapshot().debug,
   sessionId: null,
   sessionExpiresAt: null,
   sessionModel: null,
@@ -170,6 +184,13 @@ function reducer(
         ...state,
         realtimeEventTimeline: action.timeline,
       };
+    case "bubble_snapshot":
+      return {
+        ...state,
+        bubbles: action.bubbleSnapshot.bubbles,
+        activeBubbleId: action.bubbleSnapshot.activeBubbleId,
+        bubbleDebug: action.bubbleSnapshot.debug,
+      };
     case "translation_snapshot":
       return {
         ...state,
@@ -209,6 +230,9 @@ function reducer(
         translationErrorMessage: null,
         activeTranslationTasks: [],
         recentRevisionCount: action.preserveTranslatedSegments ? state.recentRevisionCount : 0,
+        bubbles: state.bubbles,
+        activeBubbleId: state.activeBubbleId,
+        bubbleDebug: state.bubbleDebug,
         sessionId: null,
         sessionExpiresAt: null,
         sessionModel: state.sessionModel,
@@ -265,18 +289,44 @@ export function useRealtimeController(options: {
     });
   }, []);
 
+  const syncBubbleSnapshot = useCallback(
+    (input?: {
+      transcriptSnapshot?: TranscriptStateSnapshot;
+      translationSnapshot?: TranslationSegmentManagerSnapshot;
+    }) => {
+      const bubbleSnapshot = buildBubbleSnapshot({
+        transcriptSnapshot: input?.transcriptSnapshot ?? transcriptBufferRef.current.snapshot,
+        translatedSegments:
+          (input?.translationSnapshot ?? translationSegmentManagerRef.current.snapshot)
+            .translatedSegments,
+        scenario: options.scenario,
+        sourceLanguage: options.sourceLanguage,
+        targetLanguage: options.targetLanguage,
+      });
+
+      dispatch({
+        type: "bubble_snapshot",
+        bubbleSnapshot,
+      });
+    },
+    [options.scenario, options.sourceLanguage, options.targetLanguage],
+  );
+
   const syncTranslationSnapshot = useCallback(
     (
-      translationSnapshot: ReturnType<
-        ReturnType<typeof createTranslationSegmentManager>["reset"]
-      >,
+      translationSnapshot: TranslationSegmentManagerSnapshot,
+      transcriptSnapshot?: TranscriptStateSnapshot,
     ) => {
       dispatch({
         type: "translation_snapshot",
         translationSnapshot,
       });
+      syncBubbleSnapshot({
+        translationSnapshot,
+        transcriptSnapshot,
+      });
     },
-    [],
+    [syncBubbleSnapshot],
   );
 
   const syncRealtimeTimeline = useCallback((timeline: RealtimeTimelineEntry[]) => {
@@ -319,7 +369,10 @@ export function useRealtimeController(options: {
       perfSnapshot: perfSnapshotRef.current,
     });
     syncRealtimeTimeline([]);
-  }, [syncRealtimeTimeline]);
+    syncBubbleSnapshot({
+      transcriptSnapshot,
+    });
+  }, [syncBubbleSnapshot, syncRealtimeTimeline]);
 
   const resetTranslationSession = useCallback(
     (options?: { preserveCompletedSegments?: boolean }) => {
@@ -339,7 +392,10 @@ export function useRealtimeController(options: {
       type: "transcript_snapshot",
       transcriptSnapshot,
     });
-  }, []);
+    syncBubbleSnapshot({
+      transcriptSnapshot,
+    });
+  }, [syncBubbleSnapshot]);
 
   const clearLiveTranslationOnly = useCallback(() => {
     const translationSnapshot = translationSegmentManagerRef.current.clearLive();
@@ -497,9 +553,19 @@ export function useRealtimeController(options: {
 
       const translationSegment =
         translationSegmentManagerRef.current.getSegment(suggestion.segmentId);
+      const bubbleSnapshot = buildBubbleSnapshot({
+        transcriptSnapshot,
+        translatedSegments: translationSegmentManagerRef.current.snapshot.translatedSegments,
+        scenario: options.scenario,
+        sourceLanguage: options.sourceLanguage,
+        targetLanguage: options.targetLanguage,
+      });
       const finalDecision = evaluateFinalRevision({
         finalSegment: transcriptSegment,
-        finalizedSegments: transcriptSnapshot.finalizedSegments,
+        bubbleTailSegmentIds: getBubbleTailSegmentIds(
+          bubbleSnapshot.bubbles,
+          suggestion.segmentId,
+        ),
         translationSegment,
       });
 
@@ -533,7 +599,7 @@ export function useRealtimeController(options: {
         reason,
       });
     },
-    [scheduleTranslation],
+    [options.scenario, options.sourceLanguage, options.targetLanguage, scheduleTranslation],
   );
 
   const applyTranscriptEvent = useCallback(
@@ -559,8 +625,12 @@ export function useRealtimeController(options: {
       });
 
       const translationSnapshot =
-        translationSegmentManagerRef.current.syncTranscriptSnapshot(transcriptSnapshot);
-      syncTranslationSnapshot(translationSnapshot);
+        translationSegmentManagerRef.current.syncTranscriptSnapshot(transcriptSnapshot, {
+          sourceLanguage: options.sourceLanguage,
+          targetLanguage: options.targetLanguage,
+          scenario: options.scenario,
+        });
+      syncTranslationSnapshot(translationSnapshot, transcriptSnapshot);
 
       if (event.kind === "transcript_delta") {
         markPerf("firstPartialTranscriptAt");
@@ -607,7 +677,14 @@ export function useRealtimeController(options: {
         }
       }
     },
-    [handleSuggestion, markPerf, syncTranslationSnapshot],
+    [
+      handleSuggestion,
+      markPerf,
+      options.scenario,
+      options.sourceLanguage,
+      options.targetLanguage,
+      syncTranslationSnapshot,
+    ],
   );
 
   const stop = useCallback(() => {

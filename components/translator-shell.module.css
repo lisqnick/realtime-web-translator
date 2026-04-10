@@ -224,6 +224,7 @@
   line-height: 1.85;
   color: var(--foreground);
   word-break: break-word;
+  white-space: pre-wrap;
 }
 
 .translationText {

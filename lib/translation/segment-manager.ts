@@ -1,4 +1,5 @@
 import type { TranscriptStateSnapshot } from "@/types/realtime";
+import type { ScenarioId, SupportedLanguageCode } from "@/types/config";
 import type {
   TranslatedSegment,
   TranslationStateSnapshot,
@@ -24,19 +25,24 @@ export interface TranslationSegmentManager {
   getSegment: (segmentId: string) => TranslatedSegment | null;
   syncTranscriptSnapshot: (
     snapshot: TranscriptStateSnapshot,
+    defaults?: {
+      sourceLanguage: SupportedLanguageCode;
+      targetLanguage: SupportedLanguageCode;
+      scenario: ScenarioId;
+    },
   ) => TranslationSegmentManagerSnapshot;
-    markSourceStable: (input: {
-      segmentId: string;
-      revision: number;
-    }) => TranslationSegmentManagerSnapshot;
-    startTranslation: (input: {
-      segmentId: string;
-      revision: number;
-      triggerReason: TranslationTriggerReason;
-      sourceLanguage: TranslatedSegment["sourceLanguage"];
-      targetLanguage: TranslatedSegment["targetLanguage"];
-      scenario: TranslatedSegment["scenario"];
-    }) => TranslationSegmentManagerSnapshot;
+  markSourceStable: (input: {
+    segmentId: string;
+    revision: number;
+  }) => TranslationSegmentManagerSnapshot;
+  startTranslation: (input: {
+    segmentId: string;
+    revision: number;
+    triggerReason: TranslationTriggerReason;
+    sourceLanguage: TranslatedSegment["sourceLanguage"];
+    targetLanguage: TranslatedSegment["targetLanguage"];
+    scenario: TranslatedSegment["scenario"];
+  }) => TranslationSegmentManagerSnapshot;
   applyDelta: (input: {
     segmentId: string;
     revision: number;
@@ -99,7 +105,7 @@ export function createTranslationSegmentManager(): TranslationSegmentManager {
     getSegment(segmentId) {
       return state.segments.get(segmentId) ?? null;
     },
-    syncTranscriptSnapshot(snapshot) {
+    syncTranscriptSnapshot(snapshot, defaults) {
       for (const transcriptSegment of snapshot.segments) {
         const existingSegment = state.segments.get(transcriptSegment.segmentId) ?? null;
 
@@ -119,9 +125,9 @@ export function createTranslationSegmentManager(): TranslationSegmentManager {
             translatedSourceText: null,
             translatedRevision: null,
             activeTranslationRevision: null,
-            sourceLanguage: "zh-CN",
-            targetLanguage: "ja-JP",
-            scenario: "general",
+            sourceLanguage: defaults?.sourceLanguage ?? "zh-CN",
+            targetLanguage: defaults?.targetLanguage ?? "ja-JP",
+            scenario: defaults?.scenario ?? "general",
             triggerReason: null,
             errorMessage: null,
           });
@@ -141,6 +147,9 @@ export function createTranslationSegmentManager(): TranslationSegmentManager {
           revision: transcriptSegment.revision,
           updatedAt: transcriptSegment.updatedAt,
           finalizedAt: transcriptSegment.finalizedAt,
+          sourceLanguage: existingSegment.sourceLanguage ?? defaults?.sourceLanguage ?? "zh-CN",
+          targetLanguage: existingSegment.targetLanguage ?? defaults?.targetLanguage ?? "ja-JP",
+          scenario: existingSegment.scenario ?? defaults?.scenario ?? "general",
         });
       }
 

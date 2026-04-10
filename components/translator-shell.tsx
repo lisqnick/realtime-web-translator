@@ -38,18 +38,10 @@ const micStatusLabel = {
   error: "麦克风异常",
 } as const;
 
-const translationStatusLabel = {
-  idle: "待翻译",
-  streaming: "翻译中",
-  completed: "已完成",
-  superseded: "已替换",
-  failed: "失败",
-} as const;
-
-const sourceStatusLabel = {
+const bubbleStatusLabel = {
   live: "实时",
   stable: "稳定",
-  final: "定稿",
+  closed: "已收起",
 } as const;
 
 function formatTimelineTimestamp(timestamp: number) {
@@ -100,7 +92,7 @@ export function TranslatorShell({ runtimeDefaults }: TranslatorShellProps) {
     Boolean(state.translationErrorMessage) ||
     state.liveSourceText.length > 0 ||
     state.liveTranslationText.length > 0 ||
-    state.finalizedSegments.length > 0 ||
+    state.bubbles.length > 0 ||
     state.translatedSegments.some(
       (segment) =>
         segment.translatedText.length > 0 ||
@@ -109,28 +101,6 @@ export function TranslatorShell({ runtimeDefaults }: TranslatorShellProps) {
     );
 
   const perfSummary = getRelativePerfDurations(state.perfSnapshot);
-  const translationBySegmentId = new Map(
-    state.translatedSegments.map((segment) => [segment.segmentId, segment]),
-  );
-  const finalizedSegmentIds = new Set(state.finalizedSegments.map((segment) => segment.segmentId));
-  const translationInFlightSegment =
-    state.liveTranslationSegmentId === null
-      ? null
-      : translationBySegmentId.get(state.liveTranslationSegmentId) ?? null;
-  const liveSourcePreview =
-    state.liveSourceText ||
-    (translationInFlightSegment && !finalizedSegmentIds.has(translationInFlightSegment.segmentId)
-      ? translationInFlightSegment.sourceText
-      : "");
-  const liveTranslationPreview =
-    translationInFlightSegment && !finalizedSegmentIds.has(translationInFlightSegment.segmentId)
-      ? translationInFlightSegment.liveTranslatedText || translationInFlightSegment.translatedText
-      : "";
-  const hasLiveCard = Boolean(liveSourcePreview.trim() || liveTranslationPreview.trim());
-  const archivedChunks = state.finalizedSegments.map((segment) => ({
-    source: segment,
-    translation: translationBySegmentId.get(segment.segmentId) ?? null,
-  }));
   const compactStatus = `${connectionStatusLabel[state.connectionStatus]} · ${
     micStatusLabel[state.micPermissionStatus]
   }`;
@@ -205,76 +175,51 @@ export function TranslatorShell({ runtimeDefaults }: TranslatorShellProps) {
         ) : null}
 
         <main className={styles.feed}>
-          {archivedChunks.length === 0 && !hasLiveCard ? (
+          {state.bubbles.length === 0 ? (
             <div className={styles.emptyState}>
               <p className={styles.emptyTitle}>开始后，这里会像手机翻译工具一样按消息流显示内容。</p>
               <p>
-                你开口后，原文会先以 delta 增量方式持续冒字；当文本趋于稳定时，译文会开始出现；completed 到来后再归档成稳定片段。
+                你连续说几句短句时，多个 chunk 会先聚合进同一个对话框；同一张卡里的原文和译文会持续补全，停顿更久或累积过长时再开下一张卡。
               </p>
             </div>
           ) : null}
 
-          {archivedChunks.map(({ source, translation }) => (
-            <article key={source.segmentId} className={styles.messageCard}>
+          {state.bubbles.map((bubble) => (
+            <article
+              key={bubble.bubbleId}
+              className={`${styles.messageCard} ${
+                bubble.status === "live" ? styles.liveMessageCard : ""
+              }`}
+            >
               <div className={styles.cardMeta}>
-                <span>{sourceStatusLabel.final}</span>
-                <span>{source.segmentId}</span>
+                <span>{bubbleStatusLabel[bubble.status]}</span>
+                <span>{bubble.bubbleId}</span>
               </div>
               <div className={styles.sourceBlock}>
                 <p className={styles.blockLabel}>原文</p>
-                <p className={styles.sourceText}>{source.text}</p>
+                <p className={styles.sourceText}>
+                  {bubble.mergedSourceText || "正在等待这张卡里的原文内容..."}
+                </p>
               </div>
               <div className={styles.translationBlock}>
                 <div className={styles.blockHeader}>
                   <p className={styles.blockLabel}>译文</p>
                   <span className={styles.blockState}>
-                    {translation
-                      ? `${sourceStatusLabel[translation.sourceStatus]} · ${
-                          translationStatusLabel[translation.translationStatus]
-                        } · rev ${translation.revision}`
-                      : "等待翻译"}
+                    {bubble.isTranslating
+                      ? `翻译中 · ${bubble.chunkCount} chunks · 修正 ${bubble.correctionCount}`
+                      : `${bubbleStatusLabel[bubble.status]} · ${bubble.chunkCount} chunks`}
                   </span>
                 </div>
                 <p className={styles.translationText}>
-                  {translation?.translatedText ||
-                    translation?.liveTranslatedText ||
-                    "该片段的译文还在生成中。"}
+                  {bubble.mergedTranslationText ||
+                    "这张卡里的译文正在补全。等当前 chunk 趋于稳定后，下面会继续接上新的译文。"}
                 </p>
-                {translation?.errorMessage ? (
-                  <p className={styles.inlineError}>{translation.errorMessage}</p>
+                {bubble.errorMessage ? (
+                  <p className={styles.inlineError}>{bubble.errorMessage}</p>
                 ) : null}
               </div>
             </article>
           ))}
-
-          {hasLiveCard ? (
-            <article className={`${styles.messageCard} ${styles.liveMessageCard}`}>
-              <div className={styles.cardMeta}>
-                <span>{sourceStatusLabel.live}</span>
-                <span>delta 增量显示中</span>
-              </div>
-              <div className={styles.sourceBlock}>
-                <p className={styles.blockLabel}>原文</p>
-                <p className={styles.sourceText}>{liveSourcePreview || "正在等待更多 delta..."}</p>
-              </div>
-              <div className={styles.translationBlock}>
-                <div className={styles.blockHeader}>
-                  <p className={styles.blockLabel}>译文</p>
-                  <span className={styles.blockState}>
-                    {translationInFlightSegment
-                      ? `${translationStatusLabel[translationInFlightSegment.translationStatus]} · rev ${
-                          translationInFlightSegment.activeTranslationRevision ??
-                          translationInFlightSegment.revision
-                        }`
-                      : "等待稳定片段"}
-                  </span>
-                </div>
-                <p className={styles.translationText}>
-                  {liveTranslationPreview || "当前只先显示原文。等这段原文足够稳定后，译文会在这里开始流式出现。"}
-                </p>
-              </div>
-            </article>
-          ) : null}
         </main>
 
         {showDebugPanel ? (
@@ -323,18 +268,38 @@ export function TranslatorShell({ runtimeDefaults }: TranslatorShellProps) {
                   <dd>{state.lastRealtimeEventType ?? "-"}</dd>
                 </div>
                 <div>
-                  <dt>Live Source</dt>
-                  <dd>{state.liveSourceText ? `${state.liveSourceText.length} chars` : "-"}</dd>
+                  <dt>Active Bubble</dt>
+                  <dd>{state.activeBubbleId ?? "-"}</dd>
                 </div>
                 <div>
-                  <dt>Live Translation</dt>
+                  <dt>Bubble Count</dt>
                   <dd>
-                    {state.liveTranslationText ? `${state.liveTranslationText.length} chars` : "-"}
+                    {state.bubbles.length}
                   </dd>
                 </div>
                 <div>
-                  <dt>Finalized Segments</dt>
-                  <dd>{state.finalizedSegments.length}</dd>
+                  <dt>Bubble Chunks</dt>
+                  <dd>{state.bubbleDebug.activeBubbleChunkCount || "-"}</dd>
+                </div>
+                <div>
+                  <dt>Last Chunk Gap</dt>
+                  <dd>
+                    {state.bubbleDebug.lastChunkGapMs === null
+                      ? "-"
+                      : `${state.bubbleDebug.lastChunkGapMs}ms`}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Bubble Open Reason</dt>
+                  <dd>{state.bubbleDebug.lastOpenReason ?? "-"}</dd>
+                </div>
+                <div>
+                  <dt>Bubble Translating</dt>
+                  <dd>{state.bubbleDebug.activeBubbleIsTranslating ? "yes" : "no"}</dd>
+                </div>
+                <div>
+                  <dt>Bubble Corrections</dt>
+                  <dd>{state.bubbleDebug.activeBubbleCorrectionCount}</dd>
                 </div>
                 <div>
                   <dt>Active Tasks</dt>
@@ -348,10 +313,6 @@ export function TranslatorShell({ runtimeDefaults }: TranslatorShellProps) {
                           .join(", ")
                       : "-"}
                   </dd>
-                </div>
-                <div>
-                  <dt>Recent Revisions</dt>
-                  <dd>{state.recentRevisionCount}</dd>
                 </div>
                 <div>
                   <dt>firstPartialTranscriptAt</dt>
