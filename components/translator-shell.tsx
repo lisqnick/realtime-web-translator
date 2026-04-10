@@ -52,6 +52,15 @@ const sourceStatusLabel = {
   final: "定稿",
 } as const;
 
+function formatTimelineTimestamp(timestamp: number) {
+  const date = new Date(timestamp);
+  const timeLabel = date.toLocaleTimeString("ja-JP", {
+    hour12: false,
+  });
+
+  return `${timeLabel}.${date.getMilliseconds().toString().padStart(3, "0")}`;
+}
+
 export function TranslatorShell({ runtimeDefaults }: TranslatorShellProps) {
   const [directionId, setDirectionId] = useState<UiLanguageDirectionId>(
     runtimeDefaults.defaultDirectionId,
@@ -291,7 +300,19 @@ export function TranslatorShell({ runtimeDefaults }: TranslatorShellProps) {
                 </div>
                 <div>
                   <dt>Realtime Model</dt>
-                  <dd>{process.env.NEXT_PUBLIC_REALTIME_MODEL_HINT ?? "server-managed"}</dd>
+                  <dd>
+                    {state.sessionModel ??
+                      process.env.NEXT_PUBLIC_REALTIME_MODEL_HINT ??
+                      "server-managed"}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Turn Detection</dt>
+                  <dd>
+                    {state.sessionTurnDetectionType
+                      ? `${state.sessionTurnDetectionType} / silence ${state.sessionSilenceDurationMs ?? "-"}ms`
+                      : "-"}
+                  </dd>
                 </div>
                 <div>
                   <dt>Session ID</dt>
@@ -381,6 +402,39 @@ export function TranslatorShell({ runtimeDefaults }: TranslatorShellProps) {
                   </dd>
                 </div>
               </dl>
+
+              <div className={styles.timelinePanel}>
+                <p className={styles.timelineTitle}>最近一次说话事件时间线</p>
+                {state.realtimeEventTimeline.length > 0 ? (
+                  <ol className={styles.timelineList}>
+                    {state.realtimeEventTimeline.map((entry, index) => (
+                      <li
+                        key={`${entry.eventType}-${entry.arrivedAt}-${index}`}
+                        className={styles.timelineItem}
+                      >
+                        <code>{entry.eventType}</code>
+                        <span>{formatTimelineTimestamp(entry.arrivedAt)}</span>
+                        <span>
+                          {entry.elapsedMsFromMicStart === null
+                            ? "mic +n/a"
+                            : `mic +${entry.elapsedMsFromMicStart}ms`}
+                        </span>
+                        <span>item {entry.itemId ?? "-"}</span>
+                        <span>
+                          index {entry.contentIndex === null ? "-" : entry.contentIndex}
+                        </span>
+                        <span>
+                          len {entry.textLength === null ? "-" : entry.textLength}
+                        </span>
+                      </li>
+                    ))}
+                  </ol>
+                ) : (
+                  <p className={styles.timelineEmpty}>
+                    还没有捕获到本轮说话的关键事件。点击开始后连续说 3 到 5 秒，再展开这里查看顺序。
+                  </p>
+                )}
+              </div>
             </div>
           </details>
         ) : null}

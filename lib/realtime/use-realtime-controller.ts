@@ -8,6 +8,7 @@ import type {
   RealtimeBrowserConnection,
   RealtimeConnectionSnapshot,
   RealtimeControllerState,
+  RealtimeTimelineEntry,
   TranscriptPerfSnapshot,
   TranscriptStateSnapshot,
 } from "@/types/realtime";
@@ -27,6 +28,10 @@ import {
 } from "@/lib/realtime/browser";
 import { parseRealtimeEvent } from "@/lib/realtime/parser";
 import { requestRealtimeSession } from "@/lib/realtime/api";
+import {
+  appendRealtimeTimelineEntry,
+  createRealtimeTimelineEntry,
+} from "@/lib/realtime/timeline";
 import { createTranscriptStabilizer } from "@/lib/stabilizer";
 import { createTranslationSegmentManager } from "@/lib/translation/segment-manager";
 import { evaluateFinalRevision } from "@/lib/translation/revision-policy";
@@ -46,6 +51,9 @@ type ControllerAction =
       type: "session_ready";
       sessionId: string;
       sessionExpiresAt: number | null;
+      sessionModel: string;
+      sessionTurnDetectionType: string;
+      sessionSilenceDurationMs: number;
     }
   | {
       type: "snapshot";
@@ -58,6 +66,10 @@ type ControllerAction =
   | {
       type: "perf_snapshot";
       perfSnapshot: TranscriptPerfSnapshot;
+    }
+  | {
+      type: "timeline_snapshot";
+      timeline: RealtimeTimelineEntry[];
     }
   | {
       type: "translation_snapshot";
@@ -95,12 +107,16 @@ const initialState: RealtimeControllerState = {
   recentRevisionCount: 0,
   sessionId: null,
   sessionExpiresAt: null,
+  sessionModel: null,
+  sessionTurnDetectionType: null,
+  sessionSilenceDurationMs: null,
   peerConnectionState: "new",
   iceConnectionState: "new",
   signalingState: "stable",
   dataChannelState: "closed",
   lastRealtimeEventType: null,
   perfSnapshot: createEmptyTranscriptPerfSnapshot(),
+  realtimeEventTimeline: [],
 };
 
 function reducer(
@@ -124,6 +140,9 @@ function reducer(
         ...state,
         sessionId: action.sessionId,
         sessionExpiresAt: action.sessionExpiresAt,
+        sessionModel: action.sessionModel,
+        sessionTurnDetectionType: action.sessionTurnDetectionType,
+        sessionSilenceDurationMs: action.sessionSilenceDurationMs,
       };
     case "snapshot":
       return {
@@ -145,6 +164,11 @@ function reducer(
       return {
         ...state,
         perfSnapshot: action.perfSnapshot,
+      };
+    case "timeline_snapshot":
+      return {
+        ...state,
+        realtimeEventTimeline: action.timeline,
       };
     case "translation_snapshot":
       return {
@@ -187,6 +211,9 @@ function reducer(
         recentRevisionCount: action.preserveTranslatedSegments ? state.recentRevisionCount : 0,
         sessionId: null,
         sessionExpiresAt: null,
+        sessionModel: state.sessionModel,
+        sessionTurnDetectionType: state.sessionTurnDetectionType,
+        sessionSilenceDurationMs: state.sessionSilenceDurationMs,
         peerConnectionState: "new",
         iceConnectionState: "new",
         signalingState: "stable",
@@ -195,6 +222,7 @@ function reducer(
         perfSnapshot: action.preserveFinalizedSegments
           ? state.perfSnapshot
           : createEmptyTranscriptPerfSnapshot(),
+        realtimeEventTimeline: state.realtimeEventTimeline,
       };
   }
 }
@@ -214,6 +242,7 @@ export function useRealtimeController(options: {
   const operationIdRef = useRef(0);
   const transcriptBufferRef = useRef(createTranscriptBuffer());
   const perfSnapshotRef = useRef(createEmptyTranscriptPerfSnapshot());
+  const realtimeTimelineRef = useRef<RealtimeTimelineEntry[]>([]);
   const stabilizerRef = useRef(createTranscriptStabilizer());
   const translationSegmentManagerRef = useRef(createTranslationSegmentManager());
   const translationSchedulerRef = useRef<ReturnType<typeof createTranslationScheduler> | null>(
@@ -250,6 +279,14 @@ export function useRealtimeController(options: {
     [],
   );
 
+  const syncRealtimeTimeline = useCallback((timeline: RealtimeTimelineEntry[]) => {
+    realtimeTimelineRef.current = timeline;
+    dispatch({
+      type: "timeline_snapshot",
+      timeline,
+    });
+  }, []);
+
   const cleanupPendingStream = useCallback(() => {
     const pendingStream = pendingStreamRef.current;
     pendingStreamRef.current = null;
@@ -281,7 +318,8 @@ export function useRealtimeController(options: {
       type: "perf_snapshot",
       perfSnapshot: perfSnapshotRef.current,
     });
-  }, []);
+    syncRealtimeTimeline([]);
+  }, [syncRealtimeTimeline]);
 
   const resetTranslationSession = useCallback(
     (options?: { preserveCompletedSegments?: boolean }) => {
@@ -307,6 +345,36 @@ export function useRealtimeController(options: {
     const translationSnapshot = translationSegmentManagerRef.current.clearLive();
     syncTranslationSnapshot(translationSnapshot);
   }, [syncTranslationSnapshot]);
+
+  const recordRealtimeEvent = useCallback(
+    (event: Parameters<typeof createRealtimeTimelineEntry>[0]) => {
+      const timelineEntry = createRealtimeTimelineEntry(event, {
+        micStartAt: perfSnapshotRef.current.micStartAt,
+      });
+
+      if (!timelineEntry) {
+        return;
+      }
+
+      const nextTimeline = appendRealtimeTimelineEntry(
+        realtimeTimelineRef.current,
+        timelineEntry,
+      );
+      syncRealtimeTimeline(nextTimeline);
+
+      if (debugPerfLogsRef.current) {
+        console.info("[realtime:timeline]", {
+          eventType: timelineEntry.eventType,
+          itemId: timelineEntry.itemId,
+          contentIndex: timelineEntry.contentIndex,
+          arrivedAt: new Date(timelineEntry.arrivedAt).toISOString(),
+          elapsedMsFromMicStart: timelineEntry.elapsedMsFromMicStart,
+          textLength: timelineEntry.textLength,
+        });
+      }
+    },
+    [syncRealtimeTimeline],
+  );
 
   const buildPreviousContext = useCallback(
     (segments: TranscriptStateSnapshot["finalizedSegments"], segmentId: string) => {
@@ -658,6 +726,9 @@ export function useRealtimeController(options: {
         type: "session_ready",
         sessionId: realtimeSession.session.id,
         sessionExpiresAt: realtimeSession.clientSecret.expiresAt,
+        sessionModel: realtimeSession.session.model,
+        sessionTurnDetectionType: realtimeSession.session.turnDetection.type,
+        sessionSilenceDurationMs: realtimeSession.session.turnDetection.silenceDurationMs,
       });
       dispatch({
         type: "status",
@@ -715,10 +786,14 @@ export function useRealtimeController(options: {
               return;
             }
 
+            recordRealtimeEvent(event);
+
             if (debugPerfLogsRef.current) {
               const eventType = typeof event.type === "string" ? event.type : "unknown";
 
               if (
+                eventType === "input_audio_buffer.speech_started" ||
+                eventType === "input_audio_buffer.speech_stopped" ||
                 eventType === "input_audio_buffer.committed" ||
                 eventType.startsWith("conversation.item.input_audio_transcription") ||
                 eventType === "error"
@@ -809,6 +884,7 @@ export function useRealtimeController(options: {
     clearLiveTranscriptOnly,
     markPerf,
     options.sourceLanguage,
+    recordRealtimeEvent,
     resetTranscriptSession,
     resetTranslationSession,
     state.appStatus,

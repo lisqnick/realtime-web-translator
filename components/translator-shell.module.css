@@ -256,6 +256,8 @@
 }
 
 .debugContent {
+  display: grid;
+  gap: 16px;
   padding: 0 16px 16px;
 }
 
@@ -288,6 +290,45 @@
   font-size: 0.84rem;
   text-align: right;
   word-break: break-word;
+}
+
+.timelinePanel {
+  display: grid;
+  gap: 10px;
+  padding-top: 4px;
+}
+
+.timelineTitle {
+  color: var(--foreground);
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.timelineList {
+  display: grid;
+  gap: 8px;
+}
+
+.timelineItem {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px dashed var(--border);
+  border-radius: 14px;
+  background: rgba(244, 246, 241, 0.86);
+  color: var(--foreground);
+  font-size: 0.8rem;
+}
+
+.timelineItem code {
+  color: var(--accent-strong);
+  word-break: break-word;
+}
+
+.timelineEmpty {
+  color: var(--muted);
+  font-size: 0.84rem;
+  line-height: 1.6;
 }
 
 .toolbar {

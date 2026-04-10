@@ -77,6 +77,22 @@ export interface RealtimeServerEvent {
   [key: string]: unknown;
 }
 
+export type RealtimeTimelineEventType =
+  | "input_audio_buffer.speech_started"
+  | "input_audio_buffer.speech_stopped"
+  | "input_audio_buffer.committed"
+  | "conversation.item.input_audio_transcription.delta"
+  | "conversation.item.input_audio_transcription.completed";
+
+export interface RealtimeTimelineEntry {
+  eventType: RealtimeTimelineEventType;
+  itemId: string | null;
+  contentIndex: number | null;
+  arrivedAt: number;
+  elapsedMsFromMicStart: number | null;
+  textLength: number | null;
+}
+
 export type ParsedRealtimeEvent =
   | ParsedTranscriptDeltaEvent
   | ParsedTranscriptSegmentEvent
@@ -184,10 +200,14 @@ export interface RealtimeControllerState {
   recentRevisionCount: number;
   sessionId: string | null;
   sessionExpiresAt: number | null;
+  sessionModel: string | null;
+  sessionTurnDetectionType: string | null;
+  sessionSilenceDurationMs: number | null;
   peerConnectionState: RTCPeerConnectionState | "new";
   iceConnectionState: RTCIceConnectionState | "new";
   signalingState: RTCSignalingState | "stable";
   dataChannelState: RTCDataChannelState | "closed";
   lastRealtimeEventType: string | null;
   perfSnapshot: TranscriptPerfSnapshot;
+  realtimeEventTimeline: RealtimeTimelineEntry[];
 }
