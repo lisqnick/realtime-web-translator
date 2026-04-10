@@ -92,6 +92,8 @@ type ControllerAction =
       type: "error";
       message: string;
       micPermissionStatus?: RealtimeControllerState["micPermissionStatus"];
+      micAccessErrorName?: string | null;
+      micAccessErrorMessage?: string | null;
     }
   | {
       type: "clear_error";
@@ -107,6 +109,8 @@ const initialState: RealtimeControllerState = {
   connectionStatus: "disconnected",
   micPermissionStatus: "not_requested",
   errorMessage: null,
+  micAccessErrorName: null,
+  micAccessErrorMessage: null,
   liveSourceText: "",
   finalizedSegments: [],
   liveTranslationText: "",
@@ -209,11 +213,15 @@ function reducer(
         connectionStatus: "error",
         errorMessage: action.message,
         micPermissionStatus: action.micPermissionStatus ?? state.micPermissionStatus,
+        micAccessErrorName: action.micAccessErrorName ?? null,
+        micAccessErrorMessage: action.micAccessErrorMessage ?? null,
       };
     case "clear_error":
       return {
         ...state,
         errorMessage: null,
+        micAccessErrorName: null,
+        micAccessErrorMessage: null,
       };
     case "reset":
       return {
@@ -221,6 +229,8 @@ function reducer(
         appStatus: "stopped",
         connectionStatus: "disconnected",
         errorMessage: null,
+        micAccessErrorName: null,
+        micAccessErrorMessage: null,
         liveSourceText: "",
         finalizedSegments: action.preserveFinalizedSegments ? state.finalizedSegments : [],
         liveTranslationText: "",
@@ -743,11 +753,18 @@ export function useRealtimeController(options: {
       assertRealtimeBrowserSupport();
     } catch (error) {
       const message =
-        error instanceof Error ? error.message : "当前浏览器不支持 Realtime 所需能力。";
+        error instanceof RealtimeBrowserError &&
+        (error.code === "unsupported_microphone" || error.code === "insecure_context")
+          ? "当前页面不是安全上下文，或浏览器环境不支持麦克风采集。"
+          : error instanceof Error
+            ? error.message
+            : "当前浏览器不支持 Realtime 所需能力。";
       dispatch({
         type: "error",
         message,
         micPermissionStatus: "unsupported",
+        micAccessErrorName: error instanceof Error ? error.name : "UnknownError",
+        micAccessErrorMessage: error instanceof Error ? error.message : String(error),
       });
       return;
     }
@@ -926,6 +943,8 @@ export function useRealtimeController(options: {
           type: "error",
           message: mediaAccessError.message,
           micPermissionStatus: mediaAccessError.micPermissionStatus,
+          micAccessErrorName: error instanceof Error ? error.name : "UnknownError",
+          micAccessErrorMessage: error instanceof Error ? error.message : String(error),
         });
         return;
       }
@@ -933,7 +952,10 @@ export function useRealtimeController(options: {
       if (error instanceof RealtimeBrowserError) {
         dispatch({
           type: "error",
-          message: error.message,
+          message:
+            error.code === "unsupported_microphone" || error.code === "insecure_context"
+              ? "当前页面不是安全上下文，或浏览器环境不支持麦克风采集。"
+              : error.message,
           micPermissionStatus:
             error.code === "unsupported_microphone" ||
             error.code === "unsupported_webrtc" ||
@@ -942,6 +964,8 @@ export function useRealtimeController(options: {
               : microphoneGranted
                 ? "granted"
                 : "error",
+          micAccessErrorName: error.name,
+          micAccessErrorMessage: error.message,
         });
         return;
       }
@@ -953,6 +977,8 @@ export function useRealtimeController(options: {
         type: "error",
         message,
         micPermissionStatus: microphoneGranted ? "granted" : "error",
+        micAccessErrorName: error instanceof Error ? error.name : "UnknownError",
+        micAccessErrorMessage: error instanceof Error ? error.message : String(error),
       });
     }
   }, [

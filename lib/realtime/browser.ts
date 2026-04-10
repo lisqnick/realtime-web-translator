@@ -53,9 +53,35 @@ export function assertRealtimeBrowserSupport() {
 export async function requestMicrophoneStream() {
   assertRealtimeBrowserSupport();
 
-  return navigator.mediaDevices.getUserMedia({
-    audio: true,
+  console.info("[media] requestMicrophoneStream: calling getUserMedia", {
+    secureContext: window.isSecureContext,
+    getUserMediaType: typeof navigator.mediaDevices?.getUserMedia,
+    hostname: window.location.hostname,
+    protocol: window.location.protocol,
   });
+
+  try {
+    const mediaStream = await navigator.mediaDevices.getUserMedia({
+      audio: true,
+    });
+
+    console.info("[media] requestMicrophoneStream: getUserMedia resolved", {
+      trackCount: mediaStream.getTracks().length,
+      audioTrackCount: mediaStream.getAudioTracks().length,
+    });
+
+    return mediaStream;
+  } catch (error) {
+    console.error("[media] requestMicrophoneStream: getUserMedia failed", {
+      name: error instanceof Error ? error.name : "unknown",
+      message: error instanceof Error ? error.message : String(error),
+      secureContext: window.isSecureContext,
+      getUserMediaType: typeof navigator.mediaDevices?.getUserMedia,
+      hostname: window.location.hostname,
+      protocol: window.location.protocol,
+    });
+    throw error;
+  }
 }
 
 export function describeMediaAccessError(error: unknown) {
@@ -72,7 +98,7 @@ export function describeMediaAccessError(error: unknown) {
     case "NotAllowedError":
       return {
         message: window.isSecureContext
-          ? "麦克风权限被拒绝，请在浏览器地址栏或站点设置中允许麦克风后重试。"
+          ? "麦克风权限被拒绝。请到浏览器站点设置里把当前域名的麦克风权限改为允许。"
           : "当前页面不是安全上下文，麦克风只能在 localhost 或 HTTPS 页面中使用。",
         micPermissionStatus: window.isSecureContext ? "denied" : "error",
       } satisfies MediaAccessErrorDescription;

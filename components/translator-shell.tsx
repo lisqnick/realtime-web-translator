@@ -65,6 +65,21 @@ export function TranslatorShell({ runtimeDefaults }: TranslatorShellProps) {
     () => (window.isSecureContext ? "yes" : "no"),
     () => "loading",
   );
+  const getUserMediaType = useSyncExternalStore(
+    () => () => undefined,
+    () => typeof navigator.mediaDevices?.getUserMedia,
+    () => "loading",
+  );
+  const hostname = useSyncExternalStore(
+    () => () => undefined,
+    () => window.location.hostname,
+    () => "loading",
+  );
+  const protocol = useSyncExternalStore(
+    () => () => undefined,
+    () => window.location.protocol,
+    () => "loading",
+  );
 
   const currentDirection = getUiDirectionById(directionId)!;
   const sourceLanguage = getLanguageConfig(currentDirection.sourceLanguage)!;
@@ -104,6 +119,7 @@ export function TranslatorShell({ runtimeDefaults }: TranslatorShellProps) {
   const compactStatus = `${connectionStatusLabel[state.connectionStatus]} · ${
     micStatusLabel[state.micPermissionStatus]
   }`;
+  const browserUnsupported = secureContext === "no" || getUserMediaType !== "function";
 
   return (
     <section className={styles.shell}>
@@ -171,6 +187,21 @@ export function TranslatorShell({ runtimeDefaults }: TranslatorShellProps) {
           <div className={styles.errorBanner}>
             <strong>最近一次翻译错误</strong>
             <p>{state.translationErrorMessage}</p>
+          </div>
+        ) : null}
+
+        {browserUnsupported ? (
+          <div className={styles.errorBanner}>
+            <strong>麦克风当前不可用</strong>
+            <p>当前页面不是安全上下文，或浏览器环境不支持麦克风采集。</p>
+          </div>
+        ) : null}
+
+        {state.micAccessErrorName || state.micAccessErrorMessage ? (
+          <div className={styles.errorBanner}>
+            <strong>getUserMedia 原始错误</strong>
+            <p>name: {state.micAccessErrorName ?? "-"}</p>
+            <p>message: {state.micAccessErrorMessage ?? "-"}</p>
           </div>
         ) : null}
 
@@ -242,6 +273,18 @@ export function TranslatorShell({ runtimeDefaults }: TranslatorShellProps) {
                 <div>
                   <dt>Secure Context</dt>
                   <dd>{secureContext}</dd>
+                </div>
+                <div>
+                  <dt>getUserMedia Type</dt>
+                  <dd>{getUserMediaType}</dd>
+                </div>
+                <div>
+                  <dt>Hostname</dt>
+                  <dd>{hostname}</dd>
+                </div>
+                <div>
+                  <dt>Protocol</dt>
+                  <dd>{protocol}</dd>
                 </div>
                 <div>
                   <dt>Realtime Model</dt>

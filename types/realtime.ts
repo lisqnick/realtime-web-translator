@@ -193,6 +193,8 @@ export interface RealtimeControllerState {
   connectionStatus: RealtimeConnectionStatus;
   micPermissionStatus: MicPermissionStatus;
   errorMessage: string | null;
+  micAccessErrorName: string | null;
+  micAccessErrorMessage: string | null;
   liveSourceText: string;
   finalizedSegments: TranscriptSegment[];
   liveTranslationText: string;
