@@ -12,43 +12,12 @@
 
 .header {
   display: grid;
-  gap: 14px;
-  padding: 18px 18px 14px;
+  gap: 12px;
+  padding: 16px 16px 14px;
   border: 1px solid var(--border);
-  border-radius: 28px;
+  border-radius: 24px;
   background: rgba(255, 255, 255, 0.92);
   box-shadow: var(--shadow);
-}
-
-.headerTop {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 12px;
-}
-
-.eyebrow {
-  color: var(--muted);
-  font-size: 0.78rem;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.title {
-  margin-top: 4px;
-  font-size: 1.65rem;
-  line-height: 1.08;
-  letter-spacing: -0.05em;
-}
-
-.statusPill {
-  padding: 8px 12px;
-  border-radius: 999px;
-  background: rgba(28, 124, 84, 0.08);
-  color: var(--accent-strong);
-  font-size: 0.8rem;
-  line-height: 1.4;
-  text-align: right;
 }
 
 .languageBar {
@@ -92,14 +61,15 @@
   opacity: 0.55;
 }
 
-.headerMeta {
-  display: grid;
-  gap: 8px;
+.headerMetaCompact {
+  display: flex;
+  justify-content: flex-start;
 }
 
 .scenarioField {
   display: grid;
   gap: 6px;
+  width: 100%;
 }
 
 .scenarioField span {
@@ -122,26 +92,6 @@
   opacity: 0.65;
 }
 
-.scenarioHint {
-  color: var(--muted);
-  font-size: 0.92rem;
-  line-height: 1.6;
-}
-
-.probeBanner {
-  display: grid;
-  gap: 6px;
-  padding: 14px 16px;
-  border: 1px solid rgba(28, 124, 84, 0.18);
-  border-radius: 18px;
-  background: rgba(28, 124, 84, 0.08);
-}
-
-.probeBanner p {
-  color: var(--accent-strong);
-  line-height: 1.6;
-}
-
 .errorBanner {
   display: grid;
   gap: 6px;
@@ -159,9 +109,9 @@
 .feed {
   display: grid;
   gap: 12px;
+  padding-bottom: 4px;
 }
 
-.emptyState,
 .messageCard {
   display: grid;
   gap: 12px;
@@ -170,16 +120,6 @@
   border-radius: 24px;
   background: rgba(255, 255, 255, 0.9);
   box-shadow: var(--shadow);
-}
-
-.emptyState {
-  color: var(--muted);
-  line-height: 1.7;
-}
-
-.emptyTitle {
-  color: var(--foreground);
-  font-weight: 600;
 }
 
 .liveMessageCard {
@@ -249,6 +189,11 @@
   color: var(--danger);
   font-size: 0.9rem;
   line-height: 1.6;
+}
+
+.feedEnd {
+  width: 100%;
+  height: 1px;
 }
 
 .debugDetails {
@@ -356,7 +301,7 @@
   position: sticky;
   bottom: 12px;
   display: grid;
-  grid-template-columns: 1.4fr 1fr 1fr;
+  grid-template-columns: 1.4fr 1fr;
   gap: 10px;
   padding: 10px;
   border: 1px solid var(--border);
@@ -390,29 +335,14 @@
   border-color: rgba(165, 107, 38, 0.18);
 }
 
-.ghostButton {
-  background: rgba(23, 34, 27, 0.05);
-  color: var(--foreground);
-  border-color: var(--border);
-}
-
 @media (max-width: 600px) {
   .phoneFrame {
     max-width: none;
   }
 
   .header {
-    padding: 16px 16px 12px;
-    border-radius: 24px;
-  }
-
-  .title {
-    font-size: 1.45rem;
-  }
-
-  .statusPill {
-    max-width: 44%;
-    font-size: 0.74rem;
+    padding: 14px 14px 12px;
+    border-radius: 22px;
   }
 
   .languageBar {

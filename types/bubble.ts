@@ -6,6 +6,11 @@ import type {
 } from "@/types/translation";
 
 export type BubbleStatus = "live" | "stable" | "closed";
+export type BubbleFinalTranslationStatus =
+  | "idle"
+  | "streaming"
+  | "completed"
+  | "failed";
 export type BubbleOpenReason =
   | "no_active_bubble"
   | "gap_too_large"
@@ -55,6 +60,15 @@ export interface BubbleDecisionLogEntry {
   reason: BubbleOpenReason;
 }
 
+export interface BubbleFinalTranslation {
+  bubbleId: string;
+  sourceText: string;
+  translatedText: string;
+  status: BubbleFinalTranslationStatus;
+  updatedAt: number;
+  errorMessage: string | null;
+}
+
 export interface TranslationBubble {
   bubbleId: string;
   sourceChunks: BubbleChunk[];
@@ -70,6 +84,9 @@ export interface TranslationBubble {
   chunkCount: number;
   openedBy: BubbleOpenReason;
   correctionCount: number;
+  finalTranslationStatus: BubbleFinalTranslationStatus;
+  finalTranslationText: string | null;
+  finalTranslationError: string | null;
   errorMessage: string | null;
 }
 

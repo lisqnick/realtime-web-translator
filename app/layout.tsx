@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { IBM_Plex_Mono, Space_Grotesk } from "next/font/google";
 import "./globals.css";
 
@@ -18,6 +18,13 @@ const monoFont = IBM_Plex_Mono({
 export const metadata: Metadata = {
   title: "实时中日互译工具",
   description: "低延迟网页版实时中日互译工具的首个可用版本脚手架",
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  viewportFit: "cover",
 };
 
 export default function RootLayout({

@@ -3,7 +3,11 @@
 import { useCallback, useEffect, useReducer, useRef } from "react";
 
 import type { ScenarioId, SupportedLanguageCode } from "@/types/config";
-import type { BubbleSnapshot } from "@/types/bubble";
+import type {
+  BubbleFinalTranslation,
+  BubbleSnapshot,
+  TranslationBubble,
+} from "@/types/bubble";
 import type {
   ParsedRealtimeEvent,
   RealtimeBrowserConnection,
@@ -40,6 +44,10 @@ import {
   createRealtimeTimelineEntry,
 } from "@/lib/realtime/timeline";
 import { createTranscriptStabilizer } from "@/lib/stabilizer";
+import {
+  streamSegmentTranslation,
+  TranslationClientError,
+} from "@/lib/translation/api";
 import { createTranslationSegmentManager } from "@/lib/translation/segment-manager";
 import { evaluateFinalRevision } from "@/lib/translation/revision-policy";
 import { createTranslationScheduler } from "@/lib/translation/scheduler";
@@ -295,6 +303,10 @@ export function useRealtimeController(options: {
   const transcriptBufferRef = useRef(createTranscriptBuffer());
   const perfSnapshotRef = useRef(createEmptyTranscriptPerfSnapshot());
   const realtimeTimelineRef = useRef<RealtimeTimelineEntry[]>([]);
+  const bubbleSnapshotRef = useRef(createEmptyBubbleSnapshot());
+  const bubbleFinalTranslationsRef = useRef<Map<string, BubbleFinalTranslation>>(new Map());
+  const bubbleFinalTranslationControllersRef = useRef<Map<string, AbortController>>(new Map());
+  const forceCloseActiveBubbleRef = useRef(false);
   const stabilizerRef = useRef(createTranscriptStabilizer());
   const translationSegmentManagerRef = useRef(createTranslationSegmentManager());
   const translationSchedulerRef = useRef<ReturnType<typeof createTranslationScheduler> | null>(
@@ -317,7 +329,19 @@ export function useRealtimeController(options: {
     });
   }, []);
 
-  const syncBubbleSnapshot = useCallback(
+  const abortBubbleFinalTranslations = useCallback((options?: { clearStore?: boolean }) => {
+    for (const controller of bubbleFinalTranslationControllersRef.current.values()) {
+      controller.abort();
+    }
+
+    bubbleFinalTranslationControllersRef.current.clear();
+
+    if (options?.clearStore) {
+      bubbleFinalTranslationsRef.current.clear();
+    }
+  }, []);
+
+  const publishBubbleSnapshot = useCallback(
     (input?: {
       transcriptSnapshot?: TranscriptStateSnapshot;
       translationSnapshot?: TranslationSegmentManagerSnapshot;
@@ -327,17 +351,174 @@ export function useRealtimeController(options: {
         translatedSegments:
           (input?.translationSnapshot ?? translationSegmentManagerRef.current.snapshot)
             .translatedSegments,
+        bubbleFinalTranslations: [...bubbleFinalTranslationsRef.current.values()],
         scenario: options.scenario,
         sourceLanguage: options.sourceLanguage,
         targetLanguage: options.targetLanguage,
+        forceCloseActiveBubble: forceCloseActiveBubbleRef.current,
       });
 
+      const previousBubbleSnapshot = bubbleSnapshotRef.current;
+      bubbleSnapshotRef.current = bubbleSnapshot;
       dispatch({
         type: "bubble_snapshot",
         bubbleSnapshot,
       });
+
+      return {
+        bubbleSnapshot,
+        previousBubbleSnapshot,
+      };
     },
     [options.scenario, options.sourceLanguage, options.targetLanguage],
+  );
+
+  const buildBubblePreviousContext = useCallback((bubbleId: string) => {
+    const bubbles = bubbleSnapshotRef.current.bubbles;
+    const bubbleIndex = bubbles.findIndex((bubble) => bubble.bubbleId === bubbleId);
+
+    if (bubbleIndex <= 0) {
+      return null;
+    }
+
+    const previousText = bubbles
+      .slice(Math.max(0, bubbleIndex - 1), bubbleIndex)
+      .map((bubble) => bubble.mergedSourceText.trim())
+      .filter(Boolean);
+
+    return previousText.length > 0 ? previousText.join("\n") : null;
+  }, []);
+
+  const triggerBubbleFinalTranslation = useCallback(
+    async (bubble: TranslationBubble) => {
+      const sourceText = bubble.mergedSourceText.trim();
+
+      if (!sourceText) {
+        return;
+      }
+
+      const existingTranslation = bubbleFinalTranslationsRef.current.get(bubble.bubbleId);
+
+      if (
+        existingTranslation &&
+        existingTranslation.sourceText === sourceText &&
+        (existingTranslation.status === "streaming" ||
+          existingTranslation.status === "completed")
+      ) {
+        return;
+      }
+
+      bubbleFinalTranslationControllersRef.current.get(bubble.bubbleId)?.abort();
+
+      const controller = new AbortController();
+      bubbleFinalTranslationControllersRef.current.set(bubble.bubbleId, controller);
+      bubbleFinalTranslationsRef.current.set(bubble.bubbleId, {
+        bubbleId: bubble.bubbleId,
+        sourceText,
+        translatedText: existingTranslation?.translatedText ?? "",
+        status: "streaming",
+        updatedAt: Date.now(),
+        errorMessage: null,
+      });
+      publishBubbleSnapshot();
+
+      let latestText = "";
+      let streamErrorMessage: string | null = null;
+
+      try {
+        await streamSegmentTranslation({
+          request: {
+            sourceLanguage: bubble.sourceLanguage,
+            targetLanguage: bubble.targetLanguage,
+            text: sourceText,
+            previousContext: buildBubblePreviousContext(bubble.bubbleId),
+            segmentId: bubble.bubbleId,
+            revision: bubble.chunkCount,
+            isFinal: true,
+            scenario: bubble.scenario,
+            triggerReason: "final",
+          },
+          signal: controller.signal,
+          onEvent: (event) => {
+            if (event.type === "translation.delta" || event.type === "translation.completed") {
+              latestText = event.text;
+              return;
+            }
+
+            if (event.type === "translation.error") {
+              streamErrorMessage = event.message;
+            }
+          },
+        });
+
+        if (streamErrorMessage) {
+          throw new TranslationClientError({
+            code: "bubble_final_translation_failed",
+            message: streamErrorMessage,
+          });
+        }
+
+        bubbleFinalTranslationsRef.current.set(bubble.bubbleId, {
+          bubbleId: bubble.bubbleId,
+          sourceText,
+          translatedText: latestText,
+          status: "completed",
+          updatedAt: Date.now(),
+          errorMessage: null,
+        });
+      } catch (error) {
+        if (controller.signal.aborted) {
+          return;
+        }
+
+        const message =
+          error instanceof TranslationClientError
+            ? error.message
+            : error instanceof Error
+              ? error.message
+              : "整段最终译文整理失败。";
+
+        bubbleFinalTranslationsRef.current.set(bubble.bubbleId, {
+          bubbleId: bubble.bubbleId,
+          sourceText,
+          translatedText: existingTranslation?.translatedText ?? "",
+          status: "failed",
+          updatedAt: Date.now(),
+          errorMessage: message,
+        });
+      } finally {
+        bubbleFinalTranslationControllersRef.current.delete(bubble.bubbleId);
+        publishBubbleSnapshot();
+      }
+    },
+    [buildBubblePreviousContext, publishBubbleSnapshot],
+  );
+
+  const syncBubbleSnapshot = useCallback(
+    (input?: {
+      transcriptSnapshot?: TranscriptStateSnapshot;
+      translationSnapshot?: TranslationSegmentManagerSnapshot;
+    }) => {
+      const { bubbleSnapshot, previousBubbleSnapshot } = publishBubbleSnapshot(input);
+      const previouslyOpenBubbleIds = new Set(
+        previousBubbleSnapshot.bubbles
+          .filter((bubble) => bubble.status !== "closed")
+          .map((bubble) => bubble.bubbleId),
+      );
+
+      for (const bubble of bubbleSnapshot.bubbles) {
+        if (bubble.status !== "closed") {
+          continue;
+        }
+
+        if (!previouslyOpenBubbleIds.has(bubble.bubbleId)) {
+          continue;
+        }
+
+        void triggerBubbleFinalTranslation(bubble);
+      }
+    },
+    [publishBubbleSnapshot, triggerBubbleFinalTranslation],
   );
 
   const syncTranslationSnapshot = useCallback(
@@ -383,6 +564,9 @@ export function useRealtimeController(options: {
   }, []);
 
   const resetTranscriptSession = useCallback(() => {
+    forceCloseActiveBubbleRef.current = false;
+    abortBubbleFinalTranslations({ clearStore: true });
+    bubbleSnapshotRef.current = createEmptyBubbleSnapshot();
     stabilizerRef.current.reset();
 
     const transcriptSnapshot = transcriptBufferRef.current.reset();
@@ -400,7 +584,7 @@ export function useRealtimeController(options: {
     syncBubbleSnapshot({
       transcriptSnapshot,
     });
-  }, [syncBubbleSnapshot, syncRealtimeTimeline]);
+  }, [abortBubbleFinalTranslations, syncBubbleSnapshot, syncRealtimeTimeline]);
 
   const resetTranslationSession = useCallback(
     (options?: { preserveCompletedSegments?: boolean }) => {
@@ -721,6 +905,7 @@ export function useRealtimeController(options: {
     abortControllerRef.current = null;
 
     translationSchedulerRef.current?.reset();
+    forceCloseActiveBubbleRef.current = true;
 
     dispatch({
       type: "status",
@@ -890,6 +1075,7 @@ export function useRealtimeController(options: {
 
             if (snapshot.connectionStatus === "disconnected") {
               activeConnectionRef.current = null;
+              forceCloseActiveBubbleRef.current = true;
               clearLiveTranscriptOnly();
               resetTranslationSession({
                 preserveCompletedSegments: true,
@@ -903,6 +1089,7 @@ export function useRealtimeController(options: {
 
             if (snapshot.connectionStatus === "error") {
               activeConnectionRef.current = null;
+              forceCloseActiveBubbleRef.current = true;
               clearLiveTranscriptOnly();
               resetTranslationSession({
                 preserveCompletedSegments: true,

@@ -4,6 +4,7 @@ import type {
   BubbleChunk,
   BubbleDecisionLogEntry,
   BubbleDebugSnapshot,
+  BubbleFinalTranslation,
   BubbleOpenReason,
   BubbleSnapshot,
   BubbleStatus,
@@ -44,10 +45,12 @@ export function createEmptyBubbleSnapshot(): BubbleSnapshot {
 export function buildBubbleSnapshot(input: {
   transcriptSnapshot: TranscriptStateSnapshot;
   translatedSegments: TranslatedSegment[];
+  bubbleFinalTranslations?: BubbleFinalTranslation[];
   scenario: ScenarioId;
   sourceLanguage: SupportedLanguageCode;
   targetLanguage: SupportedLanguageCode;
   config?: Partial<BubbleAggregationConfig>;
+  forceCloseActiveBubble?: boolean;
 }): BubbleSnapshot {
   const config = {
     ...DEFAULT_BUBBLE_AGGREGATION_CONFIG,
@@ -56,6 +59,9 @@ export function buildBubbleSnapshot(input: {
 
   const translationBySegmentId = new Map(
     input.translatedSegments.map((segment) => [segment.segmentId, segment]),
+  );
+  const bubbleFinalTranslationById = new Map(
+    (input.bubbleFinalTranslations ?? []).map((translation) => [translation.bubbleId, translation]),
   );
   const transcriptSegments = input.transcriptSnapshot.segments.filter((segment) =>
     segment.text.trim(),
@@ -146,25 +152,43 @@ export function buildBubbleSnapshot(input: {
       currentBubble.sourceChunks,
       (sourceChunk) => sourceChunk.sourceText,
     );
-    currentBubble.mergedTranslationText = joinChunkText(
+    const chunkMergedTranslationText = joinChunkText(
       currentBubble.sourceChunks,
       (sourceChunk) =>
         sourceChunk.translationStatus === "streaming"
           ? sourceChunk.liveTranslatedText || sourceChunk.translatedText
           : sourceChunk.translatedText || sourceChunk.liveTranslatedText,
     );
+    const bubbleFinalTranslation = resolveBubbleFinalTranslation(
+      bubbleFinalTranslationById.get(currentBubble.bubbleId) ?? null,
+      currentBubble.mergedSourceText,
+    );
+    currentBubble.finalTranslationStatus = bubbleFinalTranslation?.status ?? "idle";
+    currentBubble.finalTranslationText =
+      bubbleFinalTranslation?.status === "completed" &&
+      bubbleFinalTranslation.translatedText.trim().length > 0
+        ? bubbleFinalTranslation.translatedText
+        : null;
+    currentBubble.finalTranslationError =
+      bubbleFinalTranslation?.status === "failed"
+        ? bubbleFinalTranslation.errorMessage
+        : null;
+    currentBubble.mergedTranslationText =
+      currentBubble.finalTranslationText ?? chunkMergedTranslationText;
     currentBubble.isTranslating = currentBubble.sourceChunks.some(
       (sourceChunk) =>
         sourceChunk.translationStatus === "streaming" ||
         sourceChunk.activeTranslationRevision !== null,
-    );
+    ) || currentBubble.finalTranslationStatus === "streaming";
     currentBubble.correctionCount = currentBubble.sourceChunks.filter(
       (sourceChunk) => sourceChunk.triggerReason === "revision",
     ).length;
     currentBubble.errorMessage =
+      currentBubble.finalTranslationError ??
       [...currentBubble.sourceChunks]
         .reverse()
-        .find((sourceChunk) => sourceChunk.errorMessage)?.errorMessage ?? null;
+        .find((sourceChunk) => sourceChunk.errorMessage)?.errorMessage ??
+      null;
 
     previousChunk = chunk;
   }
@@ -177,6 +201,7 @@ export function buildBubbleSnapshot(input: {
     bubble.status = deriveBubbleStatus({
       bubble,
       isLastBubble,
+      forceCloseActiveBubble: input.forceCloseActiveBubble ?? false,
     });
   }
 
@@ -272,6 +297,9 @@ function createBubble(input: {
     chunkCount: 1,
     openedBy: input.openedBy,
     correctionCount: input.firstChunk.triggerReason === "revision" ? 1 : 0,
+    finalTranslationStatus: "idle",
+    finalTranslationText: null,
+    finalTranslationError: null,
     errorMessage: input.firstChunk.errorMessage,
   };
 }
@@ -341,8 +369,13 @@ function decideBubbleBoundary(input: {
 function deriveBubbleStatus(input: {
   bubble: TranslationBubble;
   isLastBubble: boolean;
+  forceCloseActiveBubble: boolean;
 }): BubbleStatus {
   if (!input.isLastBubble) {
+    return "closed";
+  }
+
+  if (input.forceCloseActiveBubble) {
     return "closed";
   }
 
@@ -357,10 +390,20 @@ function joinChunkText(
   chunks: BubbleChunk[],
   selector: (chunk: BubbleChunk) => string,
 ) {
-  return chunks
-    .map((chunk) => selector(chunk).trim())
-    .filter(Boolean)
-    .join("\n");
+  return chunks.reduce((mergedText, chunk) => {
+    const nextText = selector(chunk).trim();
+
+    if (!nextText) {
+      return mergedText;
+    }
+
+    if (!mergedText) {
+      return nextText;
+    }
+
+    const separator = getChunkSeparator(mergedText, nextText);
+    return `${mergedText}${separator}${nextText}`;
+  }, "");
 }
 
 function computeChunkGap(previousChunk: BubbleChunk | null, nextChunk: BubbleChunk) {
@@ -437,4 +480,46 @@ function truncateSourceText(text: string) {
   }
 
   return `${normalized.slice(0, 48)}...`;
+}
+
+function resolveBubbleFinalTranslation(
+  translation: BubbleFinalTranslation | null,
+  mergedSourceText: string,
+) {
+  if (!translation || translation.sourceText !== mergedSourceText) {
+    return null;
+  }
+
+  return translation;
+}
+
+function getChunkSeparator(previousText: string, nextText: string) {
+  const previousChar = previousText.trim().slice(-1);
+  const nextChar = nextText.trim().charAt(0);
+
+  if (!previousChar || !nextChar) {
+    return "";
+  }
+
+  if (/\s$/.test(previousText)) {
+    return "";
+  }
+
+  if (/[A-Za-z0-9]$/.test(previousText) && /^[A-Za-z0-9]/.test(nextText)) {
+    return " ";
+  }
+
+  if (/[\u3002.!?！？…]$/.test(previousText)) {
+    return "";
+  }
+
+  if (/[,，、；;：:]$/.test(previousText)) {
+    return "";
+  }
+
+  if (/^[,，、。！？!?]/.test(nextText)) {
+    return "";
+  }
+
+  return "";
 }

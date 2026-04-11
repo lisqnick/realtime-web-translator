@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 
 import { getRelativePerfDurations } from "@/lib/perf/transcript-metrics";
 import {
@@ -21,23 +21,6 @@ interface TranslatorShellProps {
   runtimeDefaults: PublicRuntimeDefaults;
 }
 
-const connectionStatusLabel = {
-  disconnected: "未连接",
-  creating_session: "创建会话中",
-  connecting: "连接中",
-  connected: "已连接",
-  error: "连接错误",
-} as const;
-
-const micStatusLabel = {
-  not_requested: "麦克风未请求",
-  prompt: "等待麦克风授权",
-  granted: "麦克风已授权",
-  denied: "麦克风被拒绝",
-  unsupported: "麦克风不支持",
-  error: "麦克风异常",
-} as const;
-
 const bubbleStatusLabel = {
   live: "实时",
   stable: "稳定",
@@ -51,17 +34,6 @@ function formatTimelineTimestamp(timestamp: number) {
   });
 
   return `${timeLabel}.${date.getMilliseconds().toString().padStart(3, "0")}`;
-}
-
-function formatAttemptTimestamp(timestamp: number | null) {
-  if (timestamp === null) {
-    return "-";
-  }
-
-  const date = new Date(timestamp);
-  return date.toLocaleTimeString("ja-JP", {
-    hour12: false,
-  });
 }
 
 function formatDebugTimestamp(timestamp: number | null) {
@@ -103,14 +75,16 @@ export function TranslatorShell({ runtimeDefaults }: TranslatorShellProps) {
   const currentDirection = getUiDirectionById(directionId)!;
   const sourceLanguage = getLanguageConfig(currentDirection.sourceLanguage)!;
   const targetLanguage = getLanguageConfig(currentDirection.targetLanguage)!;
-  const currentScenario = getScenarioById(scenarioId)!;
   const showDebugPanel = runtimeDefaults.nodeEnv === "development";
-  const { state, start, stop, clearError, clearTranscript } = useRealtimeController({
+  const { state, start, stop } = useRealtimeController({
     sourceLanguage: currentDirection.sourceLanguage,
     targetLanguage: currentDirection.targetLanguage,
     scenario: scenarioId,
     debugPerfLogs: runtimeDefaults.debugPerfLogs,
   });
+  const feedEndRef = useRef<HTMLDivElement | null>(null);
+  const autoScrollEnabledRef = useRef(true);
+  const previousBubbleCountRef = useRef(0);
 
   const isStarting =
     state.appStatus === "requesting_mic" ||
@@ -121,43 +95,65 @@ export function TranslatorShell({ runtimeDefaults }: TranslatorShellProps) {
   const canStart = !isStarting && state.appStatus !== "listening" && state.appStatus !== "stopping";
   const canStop =
     isStarting || state.appStatus === "listening" || state.appStatus === "stopping";
-  const canClear =
-    Boolean(state.errorMessage) ||
-    Boolean(state.translationErrorMessage) ||
-    state.liveSourceText.length > 0 ||
-    state.liveTranslationText.length > 0 ||
-    state.bubbles.length > 0 ||
-    state.translatedSegments.some(
-      (segment) =>
-        segment.translatedText.length > 0 ||
-        segment.liveTranslatedText.length > 0 ||
-        segment.errorMessage !== null,
-    );
 
   const perfSummary = getRelativePerfDurations(state.perfSnapshot);
-  const compactStatus = `${connectionStatusLabel[state.connectionStatus]} · ${
-    micStatusLabel[state.micPermissionStatus]
-  }`;
-  const browserUnsupported = secureContext === "no" || getUserMediaType !== "function";
-  const startProbeLabel =
-    state.startAttemptCount === 0
-      ? "还没有点击开始"
-      : state.lastStartBlockedByStatus
-        ? `最近一次点击被拦截：${state.lastStartBlockedByStatus}`
-        : `最近一次点击已进入：${state.appStatus}`;
+  const browserUnsupported =
+    secureContext !== "loading" &&
+    getUserMediaType !== "loading" &&
+    (secureContext === "no" || getUserMediaType !== "function");
+  const feedSignature = useMemo(() => {
+    const latestBubble = state.bubbles.at(-1) ?? null;
+
+    return [
+      state.bubbles.length,
+      latestBubble?.bubbleId ?? "-",
+      latestBubble?.mergedSourceText.length ?? 0,
+      latestBubble?.mergedTranslationText.length ?? 0,
+      latestBubble?.status ?? "-",
+      latestBubble?.finalTranslationStatus ?? "-",
+    ].join(":");
+  }, [state.bubbles]);
+
+  useEffect(() => {
+    const updateAutoScrollState = () => {
+      const viewportBottom = window.innerHeight + window.scrollY;
+      const documentBottom = document.documentElement.scrollHeight;
+      autoScrollEnabledRef.current = documentBottom - viewportBottom <= 180;
+    };
+
+    updateAutoScrollState();
+    window.addEventListener("scroll", updateAutoScrollState, { passive: true });
+    window.addEventListener("resize", updateAutoScrollState);
+
+    return () => {
+      window.removeEventListener("scroll", updateAutoScrollState);
+      window.removeEventListener("resize", updateAutoScrollState);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!autoScrollEnabledRef.current || state.bubbles.length === 0) {
+      previousBubbleCountRef.current = state.bubbles.length;
+      return;
+    }
+
+    const behavior =
+      state.bubbles.length > previousBubbleCountRef.current ? "smooth" : "auto";
+    previousBubbleCountRef.current = state.bubbles.length;
+
+    window.requestAnimationFrame(() => {
+      feedEndRef.current?.scrollIntoView({
+        block: "end",
+        behavior,
+      });
+    });
+  }, [feedSignature, state.bubbles.length]);
 
   return (
     <section className={styles.shell}>
       <div className={styles.phoneFrame}>
+        <h1 className="visually-hidden">实时中日互译工具</h1>
         <header className={styles.header}>
-          <div className={styles.headerTop}>
-            <div>
-              <p className={styles.eyebrow}>实时口语翻译</p>
-              <h1 className={styles.title}>中日双向翻译</h1>
-            </div>
-            <div className={styles.statusPill}>{compactStatus}</div>
-          </div>
-
           <div className={styles.languageBar}>
             <div className={styles.languageChip}>
               <span>源语言</span>
@@ -182,7 +178,7 @@ export function TranslatorShell({ runtimeDefaults }: TranslatorShellProps) {
             </div>
           </div>
 
-          <div className={styles.headerMeta}>
+          <div className={styles.headerMetaCompact}>
             <label className={styles.scenarioField}>
               <span>场景</span>
               <select
@@ -197,19 +193,8 @@ export function TranslatorShell({ runtimeDefaults }: TranslatorShellProps) {
                 ))}
               </select>
             </label>
-            <p className={styles.scenarioHint}>{currentScenario.description}</p>
           </div>
         </header>
-
-        <div className={styles.probeBanner}>
-          <strong>开始按钮诊断</strong>
-          <p>{startProbeLabel}</p>
-          <p>
-            点击次数 {state.startAttemptCount} · 最近一次 {formatAttemptTimestamp(
-              state.lastStartAttemptAt,
-            )} · 按钮{canStart ? "可点击" : "当前锁定"}
-          </p>
-        </div>
 
         {state.errorMessage ? (
           <div className={styles.errorBanner}>
@@ -241,15 +226,6 @@ export function TranslatorShell({ runtimeDefaults }: TranslatorShellProps) {
         ) : null}
 
         <main className={styles.feed}>
-          {state.bubbles.length === 0 ? (
-            <div className={styles.emptyState}>
-              <p className={styles.emptyTitle}>开始后，这里会像手机翻译工具一样按消息流显示内容。</p>
-              <p>
-                你连续说几句短句时，多个 chunk 会先聚合进同一个对话框；同一张卡里的原文和译文会持续补全，停顿更久或累积过长时再开下一张卡。
-              </p>
-            </div>
-          ) : null}
-
           {state.bubbles.map((bubble) => (
             <article
               key={bubble.bubbleId}
@@ -258,8 +234,14 @@ export function TranslatorShell({ runtimeDefaults }: TranslatorShellProps) {
               }`}
             >
               <div className={styles.cardMeta}>
-                <span>{bubbleStatusLabel[bubble.status]}</span>
-                <span>{bubble.bubbleId}</span>
+                <span>
+                  {bubble.finalTranslationStatus === "streaming"
+                    ? "正在整理最终译文"
+                    : bubble.isTranslating
+                      ? "翻译中"
+                      : bubbleStatusLabel[bubble.status]}
+                </span>
+                <span>{getScenarioById(bubble.scenario)?.label ?? "通用"}</span>
               </div>
               <div className={styles.sourceBlock}>
                 <p className={styles.blockLabel}>原文</p>
@@ -271,14 +253,16 @@ export function TranslatorShell({ runtimeDefaults }: TranslatorShellProps) {
                 <div className={styles.blockHeader}>
                   <p className={styles.blockLabel}>译文</p>
                   <span className={styles.blockState}>
-                    {bubble.isTranslating
-                      ? `翻译中 · ${bubble.chunkCount} chunks · 修正 ${bubble.correctionCount}`
-                      : `${bubbleStatusLabel[bubble.status]} · ${bubble.chunkCount} chunks`}
+                    {bubble.finalTranslationStatus === "streaming"
+                      ? `正在整理最终译文 · ${bubble.chunkCount} 段`
+                      : bubble.isTranslating
+                        ? `翻译中 · ${bubble.chunkCount} 段`
+                        : `${bubbleStatusLabel[bubble.status]} · ${bubble.chunkCount} 段`}
                   </span>
                 </div>
                 <p className={styles.translationText}>
                   {bubble.mergedTranslationText ||
-                    "这张卡里的译文正在补全。等当前 chunk 趋于稳定后，下面会继续接上新的译文。"}
+                    "…"}
                 </p>
                 {bubble.errorMessage ? (
                   <p className={styles.inlineError}>{bubble.errorMessage}</p>
@@ -286,6 +270,7 @@ export function TranslatorShell({ runtimeDefaults }: TranslatorShellProps) {
               </div>
             </article>
           ))}
+          <div ref={feedEndRef} className={styles.feedEnd} />
         </main>
 
         {showDebugPanel ? (
@@ -539,17 +524,6 @@ export function TranslatorShell({ runtimeDefaults }: TranslatorShellProps) {
             onClick={stop}
           >
             停止
-          </button>
-          <button
-            type="button"
-            className={styles.ghostButton}
-            disabled={!canClear}
-            onClick={() => {
-              clearError();
-              clearTranscript();
-            }}
-          >
-            清空
           </button>
         </footer>
       </div>
