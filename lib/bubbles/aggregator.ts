@@ -346,7 +346,12 @@ function decideBubbleBoundary(input: {
     };
   }
 
-  if (input.currentBubble.chunkCount >= input.config.maxChunksPerBubble) {
+  const maxAllowedChunks = getMaxAllowedChunksForBubble(
+    input.currentBubble,
+    input.config.maxChunksPerBubble,
+  );
+
+  if (input.currentBubble.chunkCount >= maxAllowedChunks) {
     return {
       decision: "create_new",
       reason: "max_chunks_reached",
@@ -480,6 +485,45 @@ function truncateSourceText(text: string) {
   }
 
   return `${normalized.slice(0, 48)}...`;
+}
+
+function getMaxAllowedChunksForBubble(
+  bubble: TranslationBubble,
+  hardLimit: number,
+) {
+  const firstChunk = bubble.sourceChunks[0];
+
+  if (!firstChunk) {
+    return hardLimit;
+  }
+
+  const firstChunkLength = getVisibleCharCount(firstChunk.sourceText);
+
+  if (firstChunkLength >= 70) {
+    return 1;
+  }
+
+  if (firstChunkLength >= 40) {
+    return Math.min(2, hardLimit);
+  }
+
+  const earlyLongChunkIndex = bubble.sourceChunks.findIndex((chunk, index) => {
+    if (index < 2 || index > 3) {
+      return false;
+    }
+
+    return getVisibleCharCount(chunk.sourceText) >= 40;
+  });
+
+  if (earlyLongChunkIndex >= 0) {
+    return Math.min(earlyLongChunkIndex + 1, hardLimit);
+  }
+
+  return hardLimit;
+}
+
+function getVisibleCharCount(text: string) {
+  return text.replace(/\s+/g, " ").trim().length;
 }
 
 function resolveBubbleFinalTranslation(
