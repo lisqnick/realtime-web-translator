@@ -77,6 +77,8 @@ export interface TranslationBubble {
   createdAt: number;
   updatedAt: number;
   status: BubbleStatus;
+  closedAt: number | null;
+  closeReason: string | null;
   scenario: ScenarioId;
   sourceLanguage: SupportedLanguageCode;
   targetLanguage: SupportedLanguageCode;

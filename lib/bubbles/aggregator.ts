@@ -203,6 +203,15 @@ export function buildBubbleSnapshot(input: {
       isLastBubble,
       forceCloseActiveBubble: input.forceCloseActiveBubble ?? false,
     });
+    const nextBubble = isLastBubble ? null : bubbles[index + 1] ?? null;
+    bubble.closedAt =
+      bubble.status === "closed"
+        ? nextBubble?.createdAt ?? bubble.updatedAt
+        : null;
+    bubble.closeReason =
+      bubble.status === "closed"
+        ? nextBubble?.openedBy ?? ((input.forceCloseActiveBubble ?? false) ? "force_closed" : null)
+        : null;
   }
 
   const debug: BubbleDebugSnapshot = {
@@ -288,6 +297,8 @@ function createBubble(input: {
     createdAt: input.firstChunk.createdAt,
     updatedAt: input.firstChunk.updatedAt,
     status: "live",
+    closedAt: null,
+    closeReason: null,
     scenario: input.scenario,
     sourceLanguage: input.sourceLanguage,
     targetLanguage: input.targetLanguage,

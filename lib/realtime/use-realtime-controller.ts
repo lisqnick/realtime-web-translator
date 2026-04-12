@@ -306,6 +306,7 @@ export function useRealtimeController(options: {
   const bubbleSnapshotRef = useRef(createEmptyBubbleSnapshot());
   const bubbleFinalTranslationsRef = useRef<Map<string, BubbleFinalTranslation>>(new Map());
   const bubbleFinalTranslationControllersRef = useRef<Map<string, AbortController>>(new Map());
+  const bubbleFinalTranslationTriggeredRef = useRef<Set<string>>(new Set());
   const forceCloseActiveBubbleRef = useRef(false);
   const stabilizerRef = useRef(createTranscriptStabilizer());
   const translationSegmentManagerRef = useRef(createTranslationSegmentManager());
@@ -500,21 +501,24 @@ export function useRealtimeController(options: {
       translationSnapshot?: TranslationSegmentManagerSnapshot;
     }) => {
       const { bubbleSnapshot, previousBubbleSnapshot } = publishBubbleSnapshot(input);
-      const previouslyOpenBubbleIds = new Set(
-        previousBubbleSnapshot.bubbles
-          .filter((bubble) => bubble.status !== "closed")
-          .map((bubble) => bubble.bubbleId),
+      const previousBubbleStatusById = new Map(
+        previousBubbleSnapshot.bubbles.map((bubble) => [bubble.bubbleId, bubble.status]),
       );
 
       for (const bubble of bubbleSnapshot.bubbles) {
-        if (bubble.status !== "closed") {
+        const previousStatus = previousBubbleStatusById.get(bubble.bubbleId);
+        const isFirstClosed =
+          bubble.status === "closed" && previousStatus !== "closed";
+
+        if (!isFirstClosed) {
           continue;
         }
 
-        if (!previouslyOpenBubbleIds.has(bubble.bubbleId)) {
+        if (bubbleFinalTranslationTriggeredRef.current.has(bubble.bubbleId)) {
           continue;
         }
 
+        bubbleFinalTranslationTriggeredRef.current.add(bubble.bubbleId);
         void triggerBubbleFinalTranslation(bubble);
       }
     },
@@ -566,6 +570,7 @@ export function useRealtimeController(options: {
   const resetTranscriptSession = useCallback(() => {
     forceCloseActiveBubbleRef.current = false;
     abortBubbleFinalTranslations({ clearStore: true });
+    bubbleFinalTranslationTriggeredRef.current.clear();
     bubbleSnapshotRef.current = createEmptyBubbleSnapshot();
     stabilizerRef.current.reset();
 
