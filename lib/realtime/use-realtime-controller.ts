@@ -530,6 +530,10 @@ export function useRealtimeController(options: {
           continue;
         }
 
+        if (bubble.chunkCount < 2) {
+          continue;
+        }
+
         if (bubbleFinalTranslationTriggeredRef.current.has(bubble.bubbleId)) {
           continue;
         }
