@@ -24,7 +24,6 @@ import {
   buildBubbleSnapshot,
   createEmptyBubbleSnapshot,
   getDefaultBubbleAggregationConfig,
-  getBubbleTailSegmentIds,
 } from "@/lib/bubbles/aggregator";
 import {
   evaluateBubbleFinalTranslationPolicy,
@@ -55,7 +54,6 @@ import {
   TranslationClientError,
 } from "@/lib/translation/api";
 import { createTranslationSegmentManager } from "@/lib/translation/segment-manager";
-import { evaluateFinalRevision } from "@/lib/translation/revision-policy";
 import { createTranslationScheduler } from "@/lib/translation/scheduler";
 
 type ControllerAction =
@@ -904,35 +902,42 @@ export function useRealtimeController(options: {
         sourceLanguage: options.sourceLanguage,
         targetLanguage: options.targetLanguage,
       });
-      const finalDecision = evaluateFinalRevision({
-        finalSegment: transcriptSegment,
-        bubbleTailSegmentIds: getBubbleTailSegmentIds(
-          bubbleSnapshot.bubbles,
-          suggestion.segmentId,
-        ),
-        translationSegment,
-      });
+      const containingBubble =
+        bubbleSnapshot.bubbles.find((bubble) =>
+          bubble.sourceChunks.some((chunk) => chunk.segmentId === suggestion.segmentId),
+        ) ?? null;
+      const hasExistingSegmentTranslation =
+        translationSegment?.translatedRevision !== null ||
+        translationSegment?.activeTranslationRevision !== null;
 
-      if (finalDecision.action === "keep") {
-        stabilizerRef.current.markTriggered(suggestion);
-
+      if (
+        containingBubble?.status !== "closed" &&
+        hasExistingSegmentTranslation
+      ) {
         if (debugPerfLogsRef.current) {
-          console.info("[translation] final kept without retrigger", {
+          console.info("[translation] skipped segment revision before bubble close", {
             segmentId: suggestion.segmentId,
             revision: suggestion.revision,
-            similarity: finalDecision.similarity,
-            withinRecentWindow: finalDecision.withinRecentWindow,
+            bubbleId: containingBubble?.bubbleId ?? null,
+            bubbleStatus: containingBubble?.status ?? null,
           });
         }
 
         return;
       }
 
-      const reason: TranslationTriggerReason =
-        translationSegment?.translatedRevision !== null ||
-        translationSegment?.activeTranslationRevision !== null
-          ? "revision"
-          : "final";
+      if (hasExistingSegmentTranslation) {
+        if (debugPerfLogsRef.current) {
+          console.info("[translation] skipped segment revision after existing final", {
+            segmentId: suggestion.segmentId,
+            revision: suggestion.revision,
+            bubbleId: containingBubble?.bubbleId ?? null,
+            bubbleStatus: containingBubble?.status ?? null,
+          });
+        }
+
+        return;
+      }
 
       await scheduleTranslation({
         transcriptSnapshot,
@@ -940,7 +945,7 @@ export function useRealtimeController(options: {
         revision: suggestion.revision,
         sourceText: suggestion.sourceText,
         isFinal: true,
-        reason,
+        reason: "final",
       });
     },
     [options.scenario, options.sourceLanguage, options.targetLanguage, scheduleTranslation],
