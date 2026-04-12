@@ -26,6 +26,7 @@ import {
   getDefaultBubbleAggregationConfig,
   getBubbleTailSegmentIds,
 } from "@/lib/bubbles/aggregator";
+import { getBubbleSealDeadline } from "@/lib/bubbles/sealing";
 import {
   createEmptyTranscriptPerfSnapshot,
   markTranscriptPerf,
@@ -308,14 +309,14 @@ export function useRealtimeController(options: {
   const bubbleFinalTranslationsRef = useRef<Map<string, BubbleFinalTranslation>>(new Map());
   const bubbleFinalTranslationControllersRef = useRef<Map<string, AbortController>>(new Map());
   const bubbleFinalTranslationTriggeredRef = useRef<Set<string>>(new Set());
-  const bubbleSnapshotRefreshTimerRef = useRef<number | null>(null);
+  const bubbleSealTimerRef = useRef<number | null>(null);
   const forceCloseActiveBubbleRef = useRef(false);
   const stabilizerRef = useRef(createTranscriptStabilizer());
   const translationSegmentManagerRef = useRef(createTranslationSegmentManager());
   const translationSchedulerRef = useRef<ReturnType<typeof createTranslationScheduler> | null>(
     null,
   );
-  const bubbleIdleCloseAfterMs = getDefaultBubbleAggregationConfig().forceNewAfterMs;
+  const bubbleSealAfterMs = getDefaultBubbleAggregationConfig().sealAfterMs;
 
   const markPerf = useCallback((key: keyof TranscriptPerfSnapshot) => {
     const nextPerfSnapshot = markTranscriptPerf(perfSnapshotRef.current, key, {
@@ -345,13 +346,13 @@ export function useRealtimeController(options: {
     }
   }, []);
 
-  const clearBubbleSnapshotRefreshTimer = useCallback(() => {
-    if (bubbleSnapshotRefreshTimerRef.current === null) {
+  const clearBubbleSealTimer = useCallback(() => {
+    if (bubbleSealTimerRef.current === null) {
       return;
     }
 
-    window.clearTimeout(bubbleSnapshotRefreshTimerRef.current);
-    bubbleSnapshotRefreshTimerRef.current = null;
+    window.clearTimeout(bubbleSealTimerRef.current);
+    bubbleSealTimerRef.current = null;
   }, []);
 
   const publishBubbleSnapshot = useCallback(
@@ -582,24 +583,9 @@ export function useRealtimeController(options: {
     }
   }, []);
 
-  const getBubbleLastSourceActivityAt = useCallback((bubble: TranslationBubble) => {
-    const lastChunk = bubble.sourceChunks.at(-1);
-
-    if (!lastChunk) {
-      return null;
-    }
-
-    return (
-      lastChunk.speechStoppedAt ??
-      lastChunk.committedAt ??
-      lastChunk.finalizedAt ??
-      lastChunk.createdAt
-    );
-  }, []);
-
   const resetTranscriptSession = useCallback(() => {
     forceCloseActiveBubbleRef.current = false;
-    clearBubbleSnapshotRefreshTimer();
+    clearBubbleSealTimer();
     abortBubbleFinalTranslations({ clearStore: true });
     bubbleFinalTranslationTriggeredRef.current.clear();
     bubbleSnapshotRef.current = createEmptyBubbleSnapshot();
@@ -622,7 +608,7 @@ export function useRealtimeController(options: {
     });
   }, [
     abortBubbleFinalTranslations,
-    clearBubbleSnapshotRefreshTimer,
+    clearBubbleSealTimer,
     syncBubbleSnapshot,
     syncRealtimeTimeline,
   ]);
@@ -946,7 +932,7 @@ export function useRealtimeController(options: {
     abortControllerRef.current = null;
 
     translationSchedulerRef.current?.reset();
-    clearBubbleSnapshotRefreshTimer();
+    clearBubbleSealTimer();
     forceCloseActiveBubbleRef.current = true;
 
     dispatch({
@@ -970,7 +956,7 @@ export function useRealtimeController(options: {
       preserveTranslatedSegments: true,
     });
   }, [
-    clearBubbleSnapshotRefreshTimer,
+    clearBubbleSealTimer,
     cleanupPendingStream,
     clearLiveTranscriptOnly,
     clearLiveTranslationOnly,
@@ -1118,7 +1104,7 @@ export function useRealtimeController(options: {
 
             if (snapshot.connectionStatus === "disconnected") {
               activeConnectionRef.current = null;
-              clearBubbleSnapshotRefreshTimer();
+              clearBubbleSealTimer();
               forceCloseActiveBubbleRef.current = true;
               clearLiveTranscriptOnly();
               resetTranslationSession({
@@ -1133,7 +1119,7 @@ export function useRealtimeController(options: {
 
             if (snapshot.connectionStatus === "error") {
               activeConnectionRef.current = null;
-              clearBubbleSnapshotRefreshTimer();
+              clearBubbleSealTimer();
               forceCloseActiveBubbleRef.current = true;
               clearLiveTranscriptOnly();
               resetTranslationSession({
@@ -1255,7 +1241,7 @@ export function useRealtimeController(options: {
   }, [
     applyTranscriptEvent,
     cleanupPendingStream,
-    clearBubbleSnapshotRefreshTimer,
+    clearBubbleSealTimer,
     clearLiveTranscriptOnly,
     markPerf,
     options.sourceLanguage,
@@ -1342,7 +1328,7 @@ export function useRealtimeController(options: {
   useEffect(() => stop, [stop]);
 
   useEffect(() => {
-    clearBubbleSnapshotRefreshTimer();
+    clearBubbleSealTimer();
 
     if (state.appStatus !== "listening") {
       return;
@@ -1355,22 +1341,19 @@ export function useRealtimeController(options: {
       return;
     }
 
-    if (activeBubble.status !== "stable") {
+    if (activeBubble.status === "closed") {
       return;
     }
 
-    const lastSourceActivityAt = getBubbleLastSourceActivityAt(activeBubble);
+    const sealDeadline = getBubbleSealDeadline(activeBubble, bubbleSealAfterMs);
 
-    if (lastSourceActivityAt === null) {
+    if (sealDeadline === null) {
       return;
     }
 
-    const refreshInMs = Math.max(
-      0,
-      lastSourceActivityAt + bubbleIdleCloseAfterMs - Date.now(),
-    );
+    const refreshInMs = Math.max(0, sealDeadline - Date.now());
 
-    bubbleSnapshotRefreshTimerRef.current = window.setTimeout(() => {
+    bubbleSealTimerRef.current = window.setTimeout(() => {
       syncBubbleSnapshot({
         transcriptSnapshot: transcriptBufferRef.current.snapshot,
         translationSnapshot: translationSegmentManagerRef.current.snapshot,
@@ -1378,11 +1361,10 @@ export function useRealtimeController(options: {
       });
     }, refreshInMs);
 
-    return clearBubbleSnapshotRefreshTimer;
+    return clearBubbleSealTimer;
   }, [
-    bubbleIdleCloseAfterMs,
-    clearBubbleSnapshotRefreshTimer,
-    getBubbleLastSourceActivityAt,
+    bubbleSealAfterMs,
+    clearBubbleSealTimer,
     state.activeBubbleId,
     state.appStatus,
     state.bubbles,

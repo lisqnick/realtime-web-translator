@@ -6,6 +6,7 @@ import type {
 } from "@/types/translation";
 
 export type BubbleStatus = "live" | "stable" | "closed";
+export type BubbleCloseReason = BubbleOpenReason | "idle_timeout" | "force_closed";
 export type BubbleFinalTranslationStatus =
   | "idle"
   | "streaming"
@@ -78,7 +79,7 @@ export interface TranslationBubble {
   updatedAt: number;
   status: BubbleStatus;
   closedAt: number | null;
-  closeReason: string | null;
+  closeReason: BubbleCloseReason | null;
   scenario: ScenarioId;
   sourceLanguage: SupportedLanguageCode;
   targetLanguage: SupportedLanguageCode;
@@ -111,7 +112,8 @@ export interface BubbleSnapshot {
 
 export interface BubbleAggregationConfig {
   appendWithinMs: number;
-  forceNewAfterMs: number;
+  splitAfterMs: number;
+  sealAfterMs: number;
   maxChunksPerBubble: number;
   correctionTailSize: number;
 }
