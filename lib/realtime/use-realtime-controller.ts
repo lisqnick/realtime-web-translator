@@ -23,6 +23,7 @@ import type { TranslationSegmentManagerSnapshot } from "@/lib/translation/segmen
 import {
   buildBubbleSnapshot,
   createEmptyBubbleSnapshot,
+  getDefaultBubbleAggregationConfig,
   getBubbleTailSegmentIds,
 } from "@/lib/bubbles/aggregator";
 import {
@@ -307,12 +308,14 @@ export function useRealtimeController(options: {
   const bubbleFinalTranslationsRef = useRef<Map<string, BubbleFinalTranslation>>(new Map());
   const bubbleFinalTranslationControllersRef = useRef<Map<string, AbortController>>(new Map());
   const bubbleFinalTranslationTriggeredRef = useRef<Set<string>>(new Set());
+  const bubbleSnapshotRefreshTimerRef = useRef<number | null>(null);
   const forceCloseActiveBubbleRef = useRef(false);
   const stabilizerRef = useRef(createTranscriptStabilizer());
   const translationSegmentManagerRef = useRef(createTranslationSegmentManager());
   const translationSchedulerRef = useRef<ReturnType<typeof createTranslationScheduler> | null>(
     null,
   );
+  const bubbleIdleCloseAfterMs = getDefaultBubbleAggregationConfig().forceNewAfterMs;
 
   const markPerf = useCallback((key: keyof TranscriptPerfSnapshot) => {
     const nextPerfSnapshot = markTranscriptPerf(perfSnapshotRef.current, key, {
@@ -342,10 +345,20 @@ export function useRealtimeController(options: {
     }
   }, []);
 
+  const clearBubbleSnapshotRefreshTimer = useCallback(() => {
+    if (bubbleSnapshotRefreshTimerRef.current === null) {
+      return;
+    }
+
+    window.clearTimeout(bubbleSnapshotRefreshTimerRef.current);
+    bubbleSnapshotRefreshTimerRef.current = null;
+  }, []);
+
   const publishBubbleSnapshot = useCallback(
     (input?: {
       transcriptSnapshot?: TranscriptStateSnapshot;
       translationSnapshot?: TranslationSegmentManagerSnapshot;
+      nowMs?: number;
     }) => {
       const bubbleSnapshot = buildBubbleSnapshot({
         transcriptSnapshot: input?.transcriptSnapshot ?? transcriptBufferRef.current.snapshot,
@@ -357,6 +370,7 @@ export function useRealtimeController(options: {
         sourceLanguage: options.sourceLanguage,
         targetLanguage: options.targetLanguage,
         forceCloseActiveBubble: forceCloseActiveBubbleRef.current,
+        nowMs: input?.nowMs,
       });
 
       const previousBubbleSnapshot = bubbleSnapshotRef.current;
@@ -499,6 +513,7 @@ export function useRealtimeController(options: {
     (input?: {
       transcriptSnapshot?: TranscriptStateSnapshot;
       translationSnapshot?: TranslationSegmentManagerSnapshot;
+      nowMs?: number;
     }) => {
       const { bubbleSnapshot, previousBubbleSnapshot } = publishBubbleSnapshot(input);
       const previousBubbleStatusById = new Map(
@@ -567,8 +582,24 @@ export function useRealtimeController(options: {
     }
   }, []);
 
+  const getBubbleLastSourceActivityAt = useCallback((bubble: TranslationBubble) => {
+    const lastChunk = bubble.sourceChunks.at(-1);
+
+    if (!lastChunk) {
+      return null;
+    }
+
+    return (
+      lastChunk.speechStoppedAt ??
+      lastChunk.committedAt ??
+      lastChunk.finalizedAt ??
+      lastChunk.createdAt
+    );
+  }, []);
+
   const resetTranscriptSession = useCallback(() => {
     forceCloseActiveBubbleRef.current = false;
+    clearBubbleSnapshotRefreshTimer();
     abortBubbleFinalTranslations({ clearStore: true });
     bubbleFinalTranslationTriggeredRef.current.clear();
     bubbleSnapshotRef.current = createEmptyBubbleSnapshot();
@@ -589,7 +620,12 @@ export function useRealtimeController(options: {
     syncBubbleSnapshot({
       transcriptSnapshot,
     });
-  }, [abortBubbleFinalTranslations, syncBubbleSnapshot, syncRealtimeTimeline]);
+  }, [
+    abortBubbleFinalTranslations,
+    clearBubbleSnapshotRefreshTimer,
+    syncBubbleSnapshot,
+    syncRealtimeTimeline,
+  ]);
 
   const resetTranslationSession = useCallback(
     (options?: { preserveCompletedSegments?: boolean }) => {
@@ -910,6 +946,7 @@ export function useRealtimeController(options: {
     abortControllerRef.current = null;
 
     translationSchedulerRef.current?.reset();
+    clearBubbleSnapshotRefreshTimer();
     forceCloseActiveBubbleRef.current = true;
 
     dispatch({
@@ -933,6 +970,7 @@ export function useRealtimeController(options: {
       preserveTranslatedSegments: true,
     });
   }, [
+    clearBubbleSnapshotRefreshTimer,
     cleanupPendingStream,
     clearLiveTranscriptOnly,
     clearLiveTranslationOnly,
@@ -1080,6 +1118,7 @@ export function useRealtimeController(options: {
 
             if (snapshot.connectionStatus === "disconnected") {
               activeConnectionRef.current = null;
+              clearBubbleSnapshotRefreshTimer();
               forceCloseActiveBubbleRef.current = true;
               clearLiveTranscriptOnly();
               resetTranslationSession({
@@ -1094,6 +1133,7 @@ export function useRealtimeController(options: {
 
             if (snapshot.connectionStatus === "error") {
               activeConnectionRef.current = null;
+              clearBubbleSnapshotRefreshTimer();
               forceCloseActiveBubbleRef.current = true;
               clearLiveTranscriptOnly();
               resetTranslationSession({
@@ -1215,6 +1255,7 @@ export function useRealtimeController(options: {
   }, [
     applyTranscriptEvent,
     cleanupPendingStream,
+    clearBubbleSnapshotRefreshTimer,
     clearLiveTranscriptOnly,
     markPerf,
     options.sourceLanguage,
@@ -1299,6 +1340,54 @@ export function useRealtimeController(options: {
   }, [markPerf, syncTranslationSnapshot]);
 
   useEffect(() => stop, [stop]);
+
+  useEffect(() => {
+    clearBubbleSnapshotRefreshTimer();
+
+    if (state.appStatus !== "listening") {
+      return;
+    }
+
+    const activeBubble =
+      state.bubbles.find((bubble) => bubble.bubbleId === state.activeBubbleId) ?? null;
+
+    if (!activeBubble) {
+      return;
+    }
+
+    if (activeBubble.status !== "stable") {
+      return;
+    }
+
+    const lastSourceActivityAt = getBubbleLastSourceActivityAt(activeBubble);
+
+    if (lastSourceActivityAt === null) {
+      return;
+    }
+
+    const refreshInMs = Math.max(
+      0,
+      lastSourceActivityAt + bubbleIdleCloseAfterMs - Date.now(),
+    );
+
+    bubbleSnapshotRefreshTimerRef.current = window.setTimeout(() => {
+      syncBubbleSnapshot({
+        transcriptSnapshot: transcriptBufferRef.current.snapshot,
+        translationSnapshot: translationSegmentManagerRef.current.snapshot,
+        nowMs: Date.now(),
+      });
+    }, refreshInMs);
+
+    return clearBubbleSnapshotRefreshTimer;
+  }, [
+    bubbleIdleCloseAfterMs,
+    clearBubbleSnapshotRefreshTimer,
+    getBubbleLastSourceActivityAt,
+    state.activeBubbleId,
+    state.appStatus,
+    state.bubbles,
+    syncBubbleSnapshot,
+  ]);
 
   useEffect(() => {
     if (state.appStatus !== "listening") {

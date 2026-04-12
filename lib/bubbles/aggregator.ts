@@ -51,11 +51,13 @@ export function buildBubbleSnapshot(input: {
   targetLanguage: SupportedLanguageCode;
   config?: Partial<BubbleAggregationConfig>;
   forceCloseActiveBubble?: boolean;
+  nowMs?: number;
 }): BubbleSnapshot {
   const config = {
     ...DEFAULT_BUBBLE_AGGREGATION_CONFIG,
     ...input.config,
   };
+  const nowMs = input.nowMs ?? Date.now();
 
   const translationBySegmentId = new Map(
     input.translatedSegments.map((segment) => [segment.segmentId, segment]),
@@ -202,15 +204,27 @@ export function buildBubbleSnapshot(input: {
       bubble,
       isLastBubble,
       forceCloseActiveBubble: input.forceCloseActiveBubble ?? false,
+      nowMs,
+      idleTimeoutMs: config.forceNewAfterMs,
     });
     const nextBubble = isLastBubble ? null : bubbles[index + 1] ?? null;
+    const idleClosedAt = getBubbleIdleClosedAt({
+      bubble,
+      nowMs,
+      idleTimeoutMs: config.forceNewAfterMs,
+    });
     bubble.closedAt =
       bubble.status === "closed"
-        ? nextBubble?.createdAt ?? bubble.updatedAt
+        ? nextBubble?.createdAt ?? idleClosedAt ?? bubble.updatedAt
         : null;
     bubble.closeReason =
       bubble.status === "closed"
-        ? nextBubble?.openedBy ?? ((input.forceCloseActiveBubble ?? false) ? "force_closed" : null)
+        ? nextBubble?.openedBy ??
+          (idleClosedAt !== null
+            ? "idle_timeout"
+            : (input.forceCloseActiveBubble ?? false)
+              ? "force_closed"
+              : null)
         : null;
   }
 
@@ -386,6 +400,8 @@ function deriveBubbleStatus(input: {
   bubble: TranslationBubble;
   isLastBubble: boolean;
   forceCloseActiveBubble: boolean;
+  nowMs: number;
+  idleTimeoutMs: number;
 }): BubbleStatus {
   if (!input.isLastBubble) {
     return "closed";
@@ -399,7 +415,17 @@ function deriveBubbleStatus(input: {
     (sourceChunk) => sourceChunk.sourceStatus !== "final",
   );
 
-  return hasLiveSource || input.bubble.isTranslating ? "live" : "stable";
+  if (hasLiveSource || input.bubble.isTranslating) {
+    return "live";
+  }
+
+  const idleClosedAt = getBubbleIdleClosedAt({
+    bubble: input.bubble,
+    nowMs: input.nowMs,
+    idleTimeoutMs: input.idleTimeoutMs,
+  });
+
+  return idleClosedAt !== null ? "closed" : "stable";
 }
 
 function joinChunkText(
@@ -496,6 +522,37 @@ function truncateSourceText(text: string) {
   }
 
   return `${normalized.slice(0, 48)}...`;
+}
+
+function getBubbleIdleClosedAt(input: {
+  bubble: TranslationBubble;
+  nowMs: number;
+  idleTimeoutMs: number;
+}) {
+  const lastSourceActivityAt = getBubbleLastSourceActivityAt(input.bubble);
+
+  if (lastSourceActivityAt === null) {
+    return null;
+  }
+
+  const idleClosedAt = lastSourceActivityAt + input.idleTimeoutMs;
+
+  return input.nowMs >= idleClosedAt ? idleClosedAt : null;
+}
+
+function getBubbleLastSourceActivityAt(bubble: TranslationBubble) {
+  const lastChunk = bubble.sourceChunks.at(-1);
+
+  if (!lastChunk) {
+    return null;
+  }
+
+  return (
+    lastChunk.speechStoppedAt ??
+    lastChunk.committedAt ??
+    lastChunk.finalizedAt ??
+    lastChunk.createdAt
+  );
 }
 
 function getMaxAllowedChunksForBubble(
