@@ -15,6 +15,7 @@ const DEFAULT_BUBBLE_AGGREGATION_CONFIG: BubbleAggregationConfig = {
   appendWithinMs: 1200,
   splitAfterMs: 1500,
   sealAfterMs: 3000,
+  finalTranslateAfterMs: 6000,
   maxChunksPerBubble: 5,
   correctionTailSize: 2,
 };

@@ -26,7 +26,10 @@ import {
   getDefaultBubbleAggregationConfig,
   getBubbleTailSegmentIds,
 } from "@/lib/bubbles/aggregator";
-import { evaluateBubbleFinalTranslationPolicy } from "@/lib/bubbles/final-translation-policy";
+import {
+  evaluateBubbleFinalTranslationPolicy,
+  isImmediateBubbleFinalTranslationCloseReason,
+} from "@/lib/bubbles/final-translation-policy";
 import { getBubbleSealDeadline } from "@/lib/bubbles/sealing";
 import {
   createEmptyTranscriptPerfSnapshot,
@@ -310,6 +313,7 @@ export function useRealtimeController(options: {
   const bubbleFinalTranslationsRef = useRef<Map<string, BubbleFinalTranslation>>(new Map());
   const bubbleFinalTranslationControllersRef = useRef<Map<string, AbortController>>(new Map());
   const bubbleFinalTranslationTriggeredRef = useRef<Set<string>>(new Set());
+  const bubbleDeferredFinalTranslationTimersRef = useRef<Map<string, number>>(new Map());
   const bubbleSealTimerRef = useRef<number | null>(null);
   const forceCloseActiveBubbleRef = useRef(false);
   const stabilizerRef = useRef(createTranscriptStabilizer());
@@ -318,6 +322,8 @@ export function useRealtimeController(options: {
     null,
   );
   const bubbleSealAfterMs = getDefaultBubbleAggregationConfig().sealAfterMs;
+  const bubbleFinalTranslateAfterMs =
+    getDefaultBubbleAggregationConfig().finalTranslateAfterMs;
 
   const markPerf = useCallback((key: keyof TranscriptPerfSnapshot) => {
     const nextPerfSnapshot = markTranscriptPerf(perfSnapshotRef.current, key, {
@@ -354,6 +360,25 @@ export function useRealtimeController(options: {
 
     window.clearTimeout(bubbleSealTimerRef.current);
     bubbleSealTimerRef.current = null;
+  }, []);
+
+  const clearDeferredBubbleFinalTranslationTimer = useCallback((bubbleId: string) => {
+    const timerId = bubbleDeferredFinalTranslationTimersRef.current.get(bubbleId);
+
+    if (timerId === undefined) {
+      return;
+    }
+
+    window.clearTimeout(timerId);
+    bubbleDeferredFinalTranslationTimersRef.current.delete(bubbleId);
+  }, []);
+
+  const clearDeferredBubbleFinalTranslationTimers = useCallback(() => {
+    for (const timerId of bubbleDeferredFinalTranslationTimersRef.current.values()) {
+      window.clearTimeout(timerId);
+    }
+
+    bubbleDeferredFinalTranslationTimersRef.current.clear();
   }, []);
 
   const publishBubbleSnapshot = useCallback(
@@ -521,32 +546,102 @@ export function useRealtimeController(options: {
       const previousBubbleStatusById = new Map(
         previousBubbleSnapshot.bubbles.map((bubble) => [bubble.bubbleId, bubble.status]),
       );
+      const previousBubbleCloseReasonById = new Map(
+        previousBubbleSnapshot.bubbles.map((bubble) => [bubble.bubbleId, bubble.closeReason]),
+      );
+
+      const triggerBubbleFinalTranslationNow = (bubble: TranslationBubble) => {
+        clearDeferredBubbleFinalTranslationTimer(bubble.bubbleId);
+
+        if (bubbleFinalTranslationTriggeredRef.current.has(bubble.bubbleId)) {
+          return;
+        }
+
+        bubbleFinalTranslationTriggeredRef.current.add(bubble.bubbleId);
+        void triggerBubbleFinalTranslation(bubble);
+      };
+
+      const scheduleDeferredBubbleFinalTranslation = (bubble: TranslationBubble) => {
+        if (bubbleFinalTranslationTriggeredRef.current.has(bubble.bubbleId)) {
+          return;
+        }
+
+        if (bubbleDeferredFinalTranslationTimersRef.current.has(bubble.bubbleId)) {
+          return;
+        }
+
+        const baseClosedAt = bubble.closedAt ?? Date.now();
+        const delayMs = Math.max(
+          0,
+          baseClosedAt + (bubbleFinalTranslateAfterMs - bubbleSealAfterMs) - Date.now(),
+        );
+        const timerId = window.setTimeout(() => {
+          bubbleDeferredFinalTranslationTimersRef.current.delete(bubble.bubbleId);
+
+          const latestBubble = bubbleSnapshotRef.current.bubbles.find(
+            (candidate) => candidate.bubbleId === bubble.bubbleId,
+          );
+
+          if (!latestBubble) {
+            return;
+          }
+
+          if (bubbleFinalTranslationTriggeredRef.current.has(latestBubble.bubbleId)) {
+            return;
+          }
+
+          const latestDecision = evaluateBubbleFinalTranslationPolicy(latestBubble);
+
+          if (!latestDecision.shouldRun || latestDecision.schedule !== "deferred") {
+            return;
+          }
+
+          bubbleFinalTranslationTriggeredRef.current.add(latestBubble.bubbleId);
+          void triggerBubbleFinalTranslation(latestBubble);
+        }, delayMs);
+
+        bubbleDeferredFinalTranslationTimersRef.current.set(bubble.bubbleId, timerId);
+      };
 
       for (const bubble of bubbleSnapshot.bubbles) {
         const previousStatus = previousBubbleStatusById.get(bubble.bubbleId);
+        const previousCloseReason =
+          previousBubbleCloseReasonById.get(bubble.bubbleId) ?? null;
         const isFirstClosed =
           bubble.status === "closed" && previousStatus !== "closed";
-
-        if (!isFirstClosed) {
-          continue;
-        }
+        const promotedFromIdleTimeout =
+          bubble.status === "closed" &&
+          previousStatus === "closed" &&
+          previousCloseReason === "idle_timeout" &&
+          bubble.closeReason !== "idle_timeout" &&
+          isImmediateBubbleFinalTranslationCloseReason(bubble.closeReason);
 
         const finalTranslationDecision =
           evaluateBubbleFinalTranslationPolicy(bubble);
+
+        if (!isFirstClosed && !promotedFromIdleTimeout) {
+          continue;
+        }
 
         if (!finalTranslationDecision.shouldRun) {
           continue;
         }
 
-        if (bubbleFinalTranslationTriggeredRef.current.has(bubble.bubbleId)) {
+        if (finalTranslationDecision.schedule === "immediate") {
+          triggerBubbleFinalTranslationNow(bubble);
           continue;
         }
 
-        bubbleFinalTranslationTriggeredRef.current.add(bubble.bubbleId);
-        void triggerBubbleFinalTranslation(bubble);
+        scheduleDeferredBubbleFinalTranslation(bubble);
       }
     },
-    [publishBubbleSnapshot, triggerBubbleFinalTranslation],
+    [
+      bubbleFinalTranslateAfterMs,
+      bubbleSealAfterMs,
+      clearDeferredBubbleFinalTranslationTimer,
+      publishBubbleSnapshot,
+      triggerBubbleFinalTranslation,
+    ],
   );
 
   const syncTranslationSnapshot = useCallback(
@@ -594,6 +689,7 @@ export function useRealtimeController(options: {
   const resetTranscriptSession = useCallback(() => {
     forceCloseActiveBubbleRef.current = false;
     clearBubbleSealTimer();
+    clearDeferredBubbleFinalTranslationTimers();
     abortBubbleFinalTranslations({ clearStore: true });
     bubbleFinalTranslationTriggeredRef.current.clear();
     bubbleSnapshotRef.current = createEmptyBubbleSnapshot();
@@ -616,6 +712,7 @@ export function useRealtimeController(options: {
     });
   }, [
     abortBubbleFinalTranslations,
+    clearDeferredBubbleFinalTranslationTimers,
     clearBubbleSealTimer,
     syncBubbleSnapshot,
     syncRealtimeTimeline,
@@ -941,6 +1038,7 @@ export function useRealtimeController(options: {
 
     translationSchedulerRef.current?.reset();
     clearBubbleSealTimer();
+    clearDeferredBubbleFinalTranslationTimers();
     forceCloseActiveBubbleRef.current = true;
 
     dispatch({
@@ -964,6 +1062,7 @@ export function useRealtimeController(options: {
       preserveTranslatedSegments: true,
     });
   }, [
+    clearDeferredBubbleFinalTranslationTimers,
     clearBubbleSealTimer,
     cleanupPendingStream,
     clearLiveTranscriptOnly,
@@ -1113,6 +1212,7 @@ export function useRealtimeController(options: {
             if (snapshot.connectionStatus === "disconnected") {
               activeConnectionRef.current = null;
               clearBubbleSealTimer();
+              clearDeferredBubbleFinalTranslationTimers();
               forceCloseActiveBubbleRef.current = true;
               clearLiveTranscriptOnly();
               resetTranslationSession({
@@ -1128,6 +1228,7 @@ export function useRealtimeController(options: {
             if (snapshot.connectionStatus === "error") {
               activeConnectionRef.current = null;
               clearBubbleSealTimer();
+              clearDeferredBubbleFinalTranslationTimers();
               forceCloseActiveBubbleRef.current = true;
               clearLiveTranscriptOnly();
               resetTranslationSession({
@@ -1249,6 +1350,7 @@ export function useRealtimeController(options: {
   }, [
     applyTranscriptEvent,
     cleanupPendingStream,
+    clearDeferredBubbleFinalTranslationTimers,
     clearBubbleSealTimer,
     clearLiveTranscriptOnly,
     markPerf,

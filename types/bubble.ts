@@ -114,6 +114,7 @@ export interface BubbleAggregationConfig {
   appendWithinMs: number;
   splitAfterMs: number;
   sealAfterMs: number;
+  finalTranslateAfterMs: number;
   maxChunksPerBubble: number;
   correctionTailSize: number;
 }
