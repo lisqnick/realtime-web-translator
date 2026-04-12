@@ -26,6 +26,7 @@ import {
   getDefaultBubbleAggregationConfig,
   getBubbleTailSegmentIds,
 } from "@/lib/bubbles/aggregator";
+import { evaluateBubbleFinalTranslationPolicy } from "@/lib/bubbles/final-translation-policy";
 import { getBubbleSealDeadline } from "@/lib/bubbles/sealing";
 import {
   createEmptyTranscriptPerfSnapshot,
@@ -530,7 +531,10 @@ export function useRealtimeController(options: {
           continue;
         }
 
-        if (bubble.chunkCount < 2) {
+        const finalTranslationDecision =
+          evaluateBubbleFinalTranslationPolicy(bubble);
+
+        if (!finalTranslationDecision.shouldRun) {
           continue;
         }
 
