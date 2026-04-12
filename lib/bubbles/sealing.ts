@@ -5,6 +5,8 @@ import type {
   TranslationBubble,
 } from "@/types/bubble";
 
+import { getImmediateBubbleCloseReason } from "@/lib/bubbles/lifecycle";
+
 export function applyBubbleSealing(input: {
   bubbles: TranslationBubble[];
   forceCloseActiveBubble: boolean;
@@ -19,6 +21,7 @@ export function applyBubbleSealing(input: {
       isLastBubble,
       forceCloseActiveBubble: input.forceCloseActiveBubble,
       nowMs: input.nowMs,
+      config: input.config,
       sealAfterMs: input.config.sealAfterMs,
       nextBubbleCreatedAt: nextBubble?.createdAt ?? null,
     });
@@ -35,6 +38,7 @@ export function applyBubbleSealing(input: {
       forceCloseActiveBubble: input.forceCloseActiveBubble,
       nextBubbleOpenedBy: nextBubble?.openedBy ?? null,
       nowMs: input.nowMs,
+      config: input.config,
       sealAfterMs: input.config.sealAfterMs,
     });
   }
@@ -92,6 +96,7 @@ function getBubbleSealedAt(input: {
   isLastBubble: boolean;
   forceCloseActiveBubble: boolean;
   nowMs: number;
+  config: BubbleAggregationConfig;
   sealAfterMs: number;
   nextBubbleCreatedAt: number | null;
 }) {
@@ -101,6 +106,13 @@ function getBubbleSealedAt(input: {
 
   if (input.forceCloseActiveBubble) {
     return input.nowMs;
+  }
+
+  if (
+    !hasBubbleLiveSource(input.bubble) &&
+    getImmediateBubbleCloseReason(input.bubble, input.config) !== null
+  ) {
+    return getBubbleLastSourceActivityAt(input.bubble) ?? input.bubble.updatedAt;
   }
 
   const sealDeadline = getBubbleSealDeadline(input.bubble, input.sealAfterMs);
@@ -120,6 +132,7 @@ function getBubbleCloseReason(input: {
   nextBubbleOpenedBy: TranslationBubble["openedBy"] | null;
   nowMs: number;
   sealAfterMs: number;
+  config: BubbleAggregationConfig;
 }): BubbleCloseReason | null {
   if (input.sealedAt === null) {
     return null;
@@ -131,6 +144,15 @@ function getBubbleCloseReason(input: {
 
   if (input.forceCloseActiveBubble) {
     return "force_closed";
+  }
+
+  const immediateCloseReason =
+    !hasBubbleLiveSource(input.bubble)
+      ? getImmediateBubbleCloseReason(input.bubble, input.config)
+      : null;
+
+  if (immediateCloseReason !== null) {
+    return immediateCloseReason;
   }
 
   const sealDeadline = getBubbleSealDeadline(input.bubble, input.sealAfterMs);

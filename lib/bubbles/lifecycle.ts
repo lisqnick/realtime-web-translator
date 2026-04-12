@@ -2,6 +2,7 @@ import type { ScenarioId, SupportedLanguageCode } from "@/types/config";
 import type {
   BubbleAggregationConfig,
   BubbleChunk,
+  BubbleCloseReason,
   BubbleDecisionLogEntry,
   BubbleDebugSnapshot,
   BubbleFinalTranslation,
@@ -170,6 +171,22 @@ export function buildBubbleLifecycle(input: {
     bubbles,
     debug,
   };
+}
+
+export function getImmediateBubbleCloseReason(
+  bubble: TranslationBubble,
+  config: BubbleAggregationConfig,
+): BubbleCloseReason | null {
+  const maxAllowedChunks = getMaxAllowedChunksForBubble(
+    bubble,
+    config.maxChunksPerBubble,
+  );
+
+  if (bubble.chunkCount >= maxAllowedChunks) {
+    return "max_chunks_reached";
+  }
+
+  return null;
 }
 
 function buildBubbleChunk(
