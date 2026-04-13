@@ -7,6 +7,7 @@ import type {
 export type TranslationTriggerReason = "stabilized" | "final" | "revision";
 
 export interface TranslationStreamRequest {
+  directionMode: TranslationDirectionMode;
   sourceLanguage: SupportedLanguageCode;
   targetLanguage: SupportedLanguageCode;
   text: string;
@@ -119,6 +120,7 @@ export interface TranslationScheduleRequest {
   segmentId: string;
   revision: number;
   sourceText: string;
+  directionMode: TranslationDirectionMode;
   sourceLanguage: SupportedLanguageCode;
   targetLanguage: SupportedLanguageCode;
   previousContext?: string | null;

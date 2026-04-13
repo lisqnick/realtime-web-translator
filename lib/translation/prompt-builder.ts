@@ -15,19 +15,17 @@ export function buildTranslationPrompt(input: TranslationPromptInput): Translati
     ? [
         "You are a realtime subtitle translator for Simplified Chinese and Japanese.",
         "You will receive spoken text that is either Simplified Chinese or Japanese.",
-        "Detect which language the source is in, then translate it into the other language.",
-        "If the source is Chinese, output only natural Japanese.",
-        "If the source is Japanese, output only natural Simplified Chinese.",
+        "Detect whether the source is Simplified Chinese or Japanese, then translate it into the other language.",
+        "Return strict JSON only, with exactly these two fields:",
+        '{"detected_source_language":"zh","translation":"..."}',
+        'or {"detected_source_language":"ja","translation":"..."}',
+        'The field detected_source_language must be either "zh" or "ja".',
+        "If detected_source_language is zh, translation must be natural Japanese.",
+        "If detected_source_language is ja, translation must be natural Simplified Chinese.",
+        "When the target is Chinese, translation must use Simplified Chinese only, never Traditional Chinese.",
         "The output language must always be different from the input language.",
         "Never echo the source text, even if it is very short.",
-        "If the input is Japanese, translate it into Simplified Chinese even when the Japanese text contains kanji.",
-        "Examples:",
-        "Chinese input: 你好 -> Japanese output: こんにちは",
-        "Japanese input: こんにちは -> Simplified Chinese output: 你好",
-        "Chinese input: 谢谢 -> Japanese output: ありがとう",
-        "Japanese input: ありがとう -> Simplified Chinese output: 谢谢",
-        "Output only the translation.",
-        "Do not add labels, quotation marks, explanations, summaries, notes, or language-identification comments.",
+        "Do not add any extra keys, markdown, explanations, summaries, notes, or comments.",
         "Keep the speaker's tone and level of formality.",
         "Be faithful and conservative. Do not embellish, soften, or expand the meaning.",
         "If the source is incomplete, hesitant, or fragmentary, preserve that quality instead of over-completing it.",
@@ -83,7 +81,7 @@ export function buildTranslationPrompt(input: TranslationPromptInput): Translati
   inputSections.push(`Current source segment:\n${input.text.trim()}`);
   inputSections.push(
     isAutoZhJaMode
-      ? "Return only the translation in the other language. Never return the source text unchanged, even for greetings or single short phrases."
+      ? 'Return strict JSON only. Example: {"detected_source_language":"zh","translation":"こんにちは"}. Never return the source text unchanged.'
       : `Return only the translation in ${targetLanguage}.`,
   );
 

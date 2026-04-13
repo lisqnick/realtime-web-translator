@@ -555,6 +555,7 @@ export function useRealtimeController(options: {
       try {
         await streamSegmentTranslation({
           request: {
+            directionMode: options.directionMode,
             sourceLanguage: bubble.sourceLanguage,
             targetLanguage: bubble.targetLanguage,
             text: sourceText,
@@ -618,7 +619,11 @@ export function useRealtimeController(options: {
         publishBubbleSnapshot();
       }
     },
-    [buildBubblePreviousContext, publishBubbleSnapshot],
+    [
+      buildBubblePreviousContext,
+      options.directionMode,
+      publishBubbleSnapshot,
+    ],
   );
 
   const syncBubbleSnapshot = useCallback(
@@ -906,6 +911,7 @@ export function useRealtimeController(options: {
           segmentId: input.segmentId,
           revision: input.revision,
           sourceText: input.sourceText,
+          directionMode: options.directionMode,
           sourceLanguage: options.sourceLanguage,
           targetLanguage: options.targetLanguage,
           previousContext: buildPreviousContext(
@@ -940,6 +946,7 @@ export function useRealtimeController(options: {
     [
       buildPreviousContext,
       markPerf,
+      options.directionMode,
       options.scenario,
       options.sourceLanguage,
       options.targetLanguage,

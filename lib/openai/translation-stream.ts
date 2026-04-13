@@ -1,6 +1,6 @@
 import { serverEnv } from "@/config/env";
 import { resolveGlossaryHints } from "@/lib/glossary/hints";
-import { isAutoZhJaLanguagePair } from "@/lib/languages/config";
+import { normalizeToSimplifiedChinese } from "@/lib/translation/normalize-chinese";
 import { buildTranslationPrompt } from "@/lib/translation/prompt-builder";
 import type { TranslationStreamRequest } from "@/types/translation";
 
@@ -31,6 +31,21 @@ type OpenAITranslationStreamEvent =
 interface ParsedSseEvent {
   event: string;
   data: string;
+}
+
+interface OpenAIResponsesPayload {
+  output?: Array<{
+    content?: Array<{
+      type?: string;
+      text?: string;
+    }>;
+  }>;
+  output_text?: string;
+}
+
+interface AutoZhJaTranslationPayload {
+  detected_source_language: "zh" | "ja";
+  translation: string;
 }
 
 export class TranslationStreamError extends Error {
@@ -74,23 +89,19 @@ export async function* streamTranslationResponse(
     });
   }
 
-  const directionMode = isAutoZhJaLanguagePair(
-    request.sourceLanguage,
-    request.targetLanguage,
-  )
-    ? "auto_zh_ja"
-    : "fixed";
-  const glossaryHints =
-    directionMode === "auto_zh_ja"
-      ? []
-      : resolveGlossaryHints({
-          sourceLanguage: request.sourceLanguage,
-          targetLanguage: request.targetLanguage,
-          scenario: request.scenario,
-          glossaryId: request.glossaryId ?? null,
-        });
+  if (request.directionMode === "auto_zh_ja") {
+    yield* streamAutomaticZhJaTranslationResponse(request, options);
+    return;
+  }
+
+  const glossaryHints = resolveGlossaryHints({
+    sourceLanguage: request.sourceLanguage,
+    targetLanguage: request.targetLanguage,
+    scenario: request.scenario,
+    glossaryId: request.glossaryId ?? null,
+  });
   const prompt = buildTranslationPrompt({
-    directionMode,
+    directionMode: request.directionMode,
     sourceLanguage: request.sourceLanguage,
     targetLanguage: request.targetLanguage,
     scenario: request.scenario,
@@ -157,6 +168,81 @@ export async function* streamTranslationResponse(
   }
 
   yield* parseOpenAITranslationStream(response.body);
+}
+
+async function* streamAutomaticZhJaTranslationResponse(
+  request: TranslationStreamRequest,
+  options?: {
+    signal?: AbortSignal;
+  },
+): AsyncGenerator<OpenAITranslationStreamEvent> {
+  const prompt = buildTranslationPrompt({
+    directionMode: request.directionMode,
+    sourceLanguage: request.sourceLanguage,
+    targetLanguage: request.targetLanguage,
+    scenario: request.scenario,
+    text: request.text,
+    previousContext: request.previousContext ?? null,
+    glossaryHints: [],
+  });
+  const clientRequestId = crypto.randomUUID();
+
+  const response = await fetch(OPENAI_RESPONSES_URL, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${serverEnv.openAiApiKey}`,
+      "Content-Type": "application/json",
+      "X-Client-Request-Id": clientRequestId,
+    },
+    body: JSON.stringify({
+      model: serverEnv.translationModel,
+      stream: false,
+      instructions: prompt.instructions,
+      input: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "input_text",
+              text: prompt.inputText,
+            },
+          ],
+        },
+      ],
+      text: {
+        format: {
+          type: "text",
+        },
+      },
+    }),
+    signal:
+      options?.signal !== undefined
+        ? AbortSignal.any([options.signal, AbortSignal.timeout(20_000)])
+        : AbortSignal.timeout(20_000),
+  });
+
+  const requestId = response.headers.get("x-request-id");
+
+  if (!response.ok) {
+    const errorMessage = await extractOpenAIErrorMessage(response);
+
+    throw new TranslationStreamError({
+      code: "openai_translation_stream_failed",
+      message: errorMessage,
+      status: response.status,
+      requestId,
+    });
+  }
+
+  const payload = (await response.json()) as OpenAIResponsesPayload;
+  const responseText = extractResponsesOutputText(payload);
+  const parsedPayload = parseAutoZhJaTranslationPayload(responseText);
+  const validatedTranslation = validateAutomaticZhJaTranslation(request, parsedPayload);
+
+  yield {
+    kind: "completed",
+    text: validatedTranslation,
+  };
 }
 
 async function* parseOpenAITranslationStream(
@@ -308,6 +394,132 @@ function safeParseJson(payload: string) {
   } catch {
     return null;
   }
+}
+
+function extractResponsesOutputText(payload: OpenAIResponsesPayload) {
+  const directText = typeof payload.output_text === "string" ? payload.output_text : null;
+
+  if (directText?.trim()) {
+    return directText;
+  }
+
+  const nestedText =
+    payload.output
+      ?.flatMap((item) => item.content ?? [])
+      .find((content) => content.type === "output_text" && typeof content.text === "string")
+      ?.text ?? "";
+
+  if (nestedText.trim()) {
+    return nestedText;
+  }
+
+  throw new TranslationStreamError({
+    code: "invalid_auto_translation_response",
+    message: "自动互译没有返回可解析的 JSON 内容。",
+    status: 502,
+  });
+}
+
+function parseAutoZhJaTranslationPayload(text: string): AutoZhJaTranslationPayload {
+  const trimmed = text.trim();
+  const direct = safeParseJson(trimmed) as AutoZhJaTranslationPayload | null;
+
+  if (direct && typeof direct === "object") {
+    return direct;
+  }
+
+  const objectMatch = trimmed.match(/\{[\s\S]*\}/);
+
+  if (objectMatch) {
+    const extracted = safeParseJson(objectMatch[0]) as AutoZhJaTranslationPayload | null;
+
+    if (extracted && typeof extracted === "object") {
+      return extracted;
+    }
+  }
+
+  throw new TranslationStreamError({
+    code: "invalid_auto_translation_json",
+    message: "自动互译返回的 JSON 无法解析。",
+    status: 502,
+  });
+}
+
+function validateAutomaticZhJaTranslation(
+  request: TranslationStreamRequest,
+  payload: AutoZhJaTranslationPayload,
+) {
+  if (
+    payload.detected_source_language !== "zh" &&
+    payload.detected_source_language !== "ja"
+  ) {
+    throw new TranslationStreamError({
+      code: "invalid_auto_detected_language",
+      message: "自动互译返回了无效的 detected_source_language。",
+      status: 502,
+    });
+  }
+
+  const sourceText = normalizeComparableText(request.text);
+  let translation = payload.translation?.trim() ?? "";
+
+  if (!translation) {
+    throw new TranslationStreamError({
+      code: "empty_auto_translation",
+      message: "自动互译返回了空的 translation。",
+      status: 502,
+    });
+  }
+
+  if (payload.detected_source_language === "ja") {
+    translation = normalizeToSimplifiedChinese(translation).trim();
+  }
+
+  if (!translation) {
+    throw new TranslationStreamError({
+      code: "empty_auto_translation_after_normalize",
+      message: "自动互译结果在简体化后为空。",
+      status: 502,
+    });
+  }
+
+  if (normalizeComparableText(translation) === sourceText) {
+    throw new TranslationStreamError({
+      code: "invalid_auto_translation_same_as_source",
+      message: "自动互译结果与原文相同，已拒绝该结果。",
+      status: 502,
+    });
+  }
+
+  if (payload.detected_source_language === "zh" && !looksLikeJapaneseTranslation(translation)) {
+    throw new TranslationStreamError({
+      code: "invalid_auto_target_language",
+      message: "自动互译未输出可信的日文结果。",
+      status: 502,
+    });
+  }
+
+  if (payload.detected_source_language === "ja" && containsJapaneseKana(translation)) {
+    throw new TranslationStreamError({
+      code: "invalid_auto_target_language",
+      message: "自动互译未输出可信的简体中文结果。",
+      status: 502,
+    });
+  }
+
+  return translation;
+}
+
+function normalizeComparableText(text: string) {
+  return text.trim().replace(/\s+/g, " ");
+}
+
+function containsJapaneseKana(text: string) {
+  return /[\u3040-\u30ff\u31f0-\u31ff\uff66-\uff9d]/.test(text);
+}
+
+function looksLikeJapaneseTranslation(text: string) {
+  return containsJapaneseKana(text);
 }
 
 async function extractOpenAIErrorMessage(response: Response) {

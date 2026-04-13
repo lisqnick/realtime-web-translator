@@ -126,6 +126,7 @@ export function createTranslationScheduler(
     try {
       await streamSegmentTranslation({
         request: {
+          directionMode: request.directionMode,
           sourceLanguage: request.sourceLanguage,
           targetLanguage: request.targetLanguage,
           text: request.sourceText,
