@@ -44,6 +44,22 @@ function formatDebugTimestamp(timestamp: number | null) {
   return formatTimelineTimestamp(timestamp);
 }
 
+function getControlDotState(appStatus: string) {
+  if (appStatus === "listening" || appStatus === "stopping") {
+    return "danger" as const;
+  }
+
+  if (
+    appStatus === "requesting_mic" ||
+    appStatus === "creating_session" ||
+    appStatus === "connecting_realtime"
+  ) {
+    return "info" as const;
+  }
+
+  return "success" as const;
+}
+
 export function TranslatorShell({ runtimeDefaults }: TranslatorShellProps) {
   const [directionId, setDirectionId] = useState<UiLanguageDirectionId>(
     runtimeDefaults.defaultDirectionId,
@@ -93,8 +109,26 @@ export function TranslatorShell({ runtimeDefaults }: TranslatorShellProps) {
   const controlsLocked =
     isStarting || state.appStatus === "listening" || state.appStatus === "stopping";
   const canStart = !isStarting && state.appStatus !== "listening" && state.appStatus !== "stopping";
-  const canStop =
-    isStarting || state.appStatus === "listening" || state.appStatus === "stopping";
+  const controlDotTone = getControlDotState(state.appStatus);
+  const controlDotDisabled =
+    state.appStatus === "requesting_mic" ||
+    state.appStatus === "creating_session" ||
+    state.appStatus === "connecting_realtime" ||
+    state.appStatus === "stopping";
+  const controlDotAction =
+    state.appStatus === "listening" ? stop : canStart ? start : undefined;
+  const controlDotLabel =
+    state.appStatus === "listening"
+      ? "停止翻译"
+      : state.appStatus === "stopping"
+        ? "停止中"
+        : state.appStatus === "requesting_mic"
+          ? "正在请求麦克风权限"
+          : state.appStatus === "creating_session"
+            ? "正在创建会话"
+            : state.appStatus === "connecting_realtime"
+              ? "正在连接"
+              : "开始翻译";
 
   const perfSummary = getRelativePerfDurations(state.perfSnapshot);
   const browserUnsupported =
@@ -503,29 +537,21 @@ export function TranslatorShell({ runtimeDefaults }: TranslatorShellProps) {
             </div>
           </details>
         ) : null}
+      </div>
 
-        <footer className={styles.toolbar}>
-          <button
-            type="button"
-            className={styles.primaryButton}
-            disabled={!canStart}
-            onClick={start}
-          >
-            {state.appStatus === "listening"
-              ? "监听中"
-              : isStarting
-                ? "连接中..."
-                : "开始"}
-          </button>
-          <button
-            type="button"
-            className={styles.secondaryButton}
-            disabled={!canStop}
-            onClick={stop}
-          >
-            停止
-          </button>
-        </footer>
+      <div className={styles.controlDotDock}>
+        <button
+          type="button"
+          className={`${styles.controlDot} ${styles[`controlDot--${controlDotTone}`]} ${
+            controlDotDisabled ? styles["controlDot--disabled"] : ""
+          }`}
+          disabled={controlDotDisabled}
+          onClick={controlDotAction}
+          aria-label={controlDotLabel}
+        >
+          <span className="visually-hidden">{controlDotLabel}</span>
+          <span className={styles.controlDotCore} aria-hidden="true" />
+        </button>
       </div>
     </section>
   );
