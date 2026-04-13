@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 
-import { serverEnv } from "@/config/env";
 import { createRealtimeSession, RealtimeSessionCreationError } from "@/lib/openai/realtime-session";
 import { isSupportedLanguageCode } from "@/lib/languages/config";
 import type { ApiErrorResponse, RealtimeSessionRequest } from "@/types/realtime";
@@ -42,7 +41,7 @@ export async function POST(request: Request) {
 
   try {
     const session = await createRealtimeSession({
-      sourceLanguage: payload.sourceLanguage ?? serverEnv.defaults.sourceLanguage,
+      sourceLanguage: payload.sourceLanguage,
     });
 
     return NextResponse.json(session, {

@@ -2,7 +2,7 @@ import type { SupportedLanguageCode } from "@/types/config";
 import type { ApiErrorResponse, RealtimeSessionResponse } from "@/types/realtime";
 
 export async function requestRealtimeSession(options: {
-  sourceLanguage: SupportedLanguageCode;
+  sourceLanguage?: SupportedLanguageCode;
   signal?: AbortSignal;
 }) {
   const response = await fetch("/api/realtime/session", {

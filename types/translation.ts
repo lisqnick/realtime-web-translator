@@ -1,4 +1,8 @@
-import type { ScenarioId, SupportedLanguageCode } from "@/types/config";
+import type {
+  ScenarioId,
+  SupportedLanguageCode,
+  TranslationDirectionMode,
+} from "@/types/config";
 
 export type TranslationTriggerReason = "stabilized" | "final" | "revision";
 
@@ -96,6 +100,7 @@ export interface TranslationStateSnapshot {
 }
 
 export interface TranslationPromptInput {
+  directionMode: TranslationDirectionMode;
   sourceLanguage: SupportedLanguageCode;
   targetLanguage: SupportedLanguageCode;
   scenario: ScenarioId;

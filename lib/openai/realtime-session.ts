@@ -16,7 +16,7 @@ const DEFAULT_REALTIME_TURN_DETECTION: RealtimeTurnDetectionConfig = {
 };
 
 interface CreateRealtimeSessionInput {
-  sourceLanguage: SupportedLanguageCode;
+  sourceLanguage?: SupportedLanguageCode;
 }
 
 interface OpenAIRealtimeSessionPayload {
@@ -113,7 +113,6 @@ export function buildRealtimeTurnDetectionConfig(): RealtimeTurnDetectionConfig 
 }
 
 export function buildRealtimeSessionConfig({ sourceLanguage }: CreateRealtimeSessionInput) {
-  const language = mapSupportedLanguageToRealtimeLanguage(sourceLanguage);
   const turnDetection = buildRealtimeTurnDetectionConfig();
 
   return {
@@ -125,8 +124,12 @@ export function buildRealtimeSessionConfig({ sourceLanguage }: CreateRealtimeSes
         },
         transcription: {
           model: serverEnv.realtimeTranscriptionModel,
-          language,
           prompt: "",
+          ...(sourceLanguage
+            ? {
+                language: mapSupportedLanguageToRealtimeLanguage(sourceLanguage),
+              }
+            : {}),
         },
         turn_detection: {
           type: turnDetection.type,
@@ -210,7 +213,7 @@ export async function createRealtimeSession({
       model: transcription?.model ?? serverEnv.realtimeTranscriptionModel,
       language:
         (transcription?.language as RealtimeTranscriptionLanguage | undefined) ??
-        mapSupportedLanguageToRealtimeLanguage(sourceLanguage),
+        (sourceLanguage ? mapSupportedLanguageToRealtimeLanguage(sourceLanguage) : "zh"),
       turnDetection: {
         type: "server_vad",
         threshold: turnDetection?.threshold ?? DEFAULT_REALTIME_TURN_DETECTION.threshold,

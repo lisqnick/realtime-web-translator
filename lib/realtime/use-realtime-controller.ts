@@ -2,7 +2,11 @@
 
 import { useCallback, useEffect, useReducer, useRef } from "react";
 
-import type { ScenarioId, SupportedLanguageCode } from "@/types/config";
+import type {
+  ScenarioId,
+  SupportedLanguageCode,
+  TranslationDirectionMode,
+} from "@/types/config";
 import type {
   BubbleFinalTranslation,
   BubbleSnapshot,
@@ -303,6 +307,7 @@ function reducer(
 }
 
 export function useRealtimeController(options: {
+  directionMode: TranslationDirectionMode;
   sourceLanguage: SupportedLanguageCode;
   targetLanguage: SupportedLanguageCode;
   scenario: ScenarioId;
@@ -1261,7 +1266,8 @@ export function useRealtimeController(options: {
       abortControllerRef.current = abortController;
 
       const realtimeSession = await requestRealtimeSession({
-        sourceLanguage: options.sourceLanguage,
+        sourceLanguage:
+          options.directionMode === "auto_zh_ja" ? undefined : options.sourceLanguage,
         signal: abortController.signal,
       });
 
@@ -1449,6 +1455,7 @@ export function useRealtimeController(options: {
     clearBubbleSealTimer,
     clearLiveTranscriptOnly,
     markPerf,
+    options.directionMode,
     options.sourceLanguage,
     recordRealtimeEvent,
     resetTranscriptSession,

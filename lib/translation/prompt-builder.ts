@@ -9,18 +9,42 @@ export function buildTranslationPrompt(input: TranslationPromptInput): Translati
     getLanguageConfig(input.targetLanguage)?.translationDisplayName ?? input.targetLanguage;
   const scenario = getScenarioById(input.scenario);
   const glossaryHints = input.glossaryHints ?? [];
+  const isAutoZhJaMode = input.directionMode === "auto_zh_ja";
 
-  const instructionLines = [
-    "You are a realtime subtitle translator.",
-    `Translate spoken ${sourceLanguage} into natural ${targetLanguage}.`,
-    "Output only the translated text in the target language.",
-    "Do not add labels, quotation marks, explanations, summaries, or notes.",
-    "Keep the speaker's tone and level of formality.",
-    "Be faithful and conservative. Do not embellish, soften, or expand the meaning.",
-    "If the source is incomplete, hesitant, or fragmentary, preserve that quality instead of over-completing it.",
-    "Use scenario hints only as weak preferences for terminology and tone.",
-    "If the source clearly does not belong to the selected scenario, still translate faithfully by original meaning.",
-  ];
+  const instructionLines = isAutoZhJaMode
+    ? [
+        "You are a realtime subtitle translator for Simplified Chinese and Japanese.",
+        "You will receive spoken text that is either Simplified Chinese or Japanese.",
+        "Detect which language the source is in, then translate it into the other language.",
+        "If the source is Chinese, output only natural Japanese.",
+        "If the source is Japanese, output only natural Simplified Chinese.",
+        "The output language must always be different from the input language.",
+        "Never echo the source text, even if it is very short.",
+        "If the input is Japanese, translate it into Simplified Chinese even when the Japanese text contains kanji.",
+        "Examples:",
+        "Chinese input: 你好 -> Japanese output: こんにちは",
+        "Japanese input: こんにちは -> Simplified Chinese output: 你好",
+        "Chinese input: 谢谢 -> Japanese output: ありがとう",
+        "Japanese input: ありがとう -> Simplified Chinese output: 谢谢",
+        "Output only the translation.",
+        "Do not add labels, quotation marks, explanations, summaries, notes, or language-identification comments.",
+        "Keep the speaker's tone and level of formality.",
+        "Be faithful and conservative. Do not embellish, soften, or expand the meaning.",
+        "If the source is incomplete, hesitant, or fragmentary, preserve that quality instead of over-completing it.",
+        "Use scenario hints only as weak preferences for terminology and tone.",
+        "If the source clearly does not belong to the selected scenario, still translate faithfully by original meaning.",
+      ]
+    : [
+        "You are a realtime subtitle translator.",
+        `Translate spoken ${sourceLanguage} into natural ${targetLanguage}.`,
+        "Output only the translated text in the target language.",
+        "Do not add labels, quotation marks, explanations, summaries, or notes.",
+        "Keep the speaker's tone and level of formality.",
+        "Be faithful and conservative. Do not embellish, soften, or expand the meaning.",
+        "If the source is incomplete, hesitant, or fragmentary, preserve that quality instead of over-completing it.",
+        "Use scenario hints only as weak preferences for terminology and tone.",
+        "If the source clearly does not belong to the selected scenario, still translate faithfully by original meaning.",
+      ];
 
   if (scenario) {
     instructionLines.push(`Selected scenario: ${scenario.label}.`);
@@ -38,11 +62,17 @@ export function buildTranslationPrompt(input: TranslationPromptInput): Translati
     );
   }
 
-  const inputSections = [
-    `Source language: ${sourceLanguage}`,
-    `Target language: ${targetLanguage}`,
-    scenario ? `Scenario: ${scenario.label}` : "Scenario: general",
-  ];
+  const inputSections = isAutoZhJaMode
+    ? [
+        "Source language: auto-detect between Simplified Chinese and Japanese",
+        "Target language: the other language",
+        scenario ? `Scenario: ${scenario.label}` : "Scenario: general",
+      ]
+    : [
+        `Source language: ${sourceLanguage}`,
+        `Target language: ${targetLanguage}`,
+        scenario ? `Scenario: ${scenario.label}` : "Scenario: general",
+      ];
 
   if (input.previousContext?.trim()) {
     inputSections.push(
@@ -51,7 +81,11 @@ export function buildTranslationPrompt(input: TranslationPromptInput): Translati
   }
 
   inputSections.push(`Current source segment:\n${input.text.trim()}`);
-  inputSections.push(`Return only the translation in ${targetLanguage}.`);
+  inputSections.push(
+    isAutoZhJaMode
+      ? "Return only the translation in the other language. Never return the source text unchanged, even for greetings or single short phrases."
+      : `Return only the translation in ${targetLanguage}.`,
+  );
 
   return {
     instructions: instructionLines.join("\n"),

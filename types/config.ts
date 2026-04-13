@@ -1,6 +1,11 @@
 export type SupportedLanguageCode = "zh-CN" | "ja-JP" | "en-US" | "ko-KR";
 
-export type UiLanguageDirectionId = "zh-CN__ja-JP" | "ja-JP__zh-CN";
+export type TranslationDirectionMode = "fixed" | "auto_zh_ja";
+
+export type UiLanguageDirectionId =
+  | "zh-CN__ja-JP"
+  | "ja-JP__zh-CN"
+  | "zh-ja-auto";
 
 export type ScenarioId =
   | "general"
@@ -43,8 +48,11 @@ export interface LanguageConfig {
 export interface UiLanguageDirection {
   id: UiLanguageDirectionId;
   label: string;
+  mode: TranslationDirectionMode;
   sourceLanguage: SupportedLanguageCode;
   targetLanguage: SupportedLanguageCode;
+  sourceLabel: string;
+  targetLabel: string;
   enabled: boolean;
 }
 

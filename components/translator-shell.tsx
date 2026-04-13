@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "reac
 
 import { getRelativePerfDurations } from "@/lib/perf/transcript-metrics";
 import {
-  getLanguageConfig,
+  getNextUiDirectionId,
   getUiDirectionById,
 } from "@/lib/languages/config";
 import { useRealtimeController } from "@/lib/realtime/use-realtime-controller";
@@ -89,10 +89,9 @@ export function TranslatorShell({ runtimeDefaults }: TranslatorShellProps) {
   );
 
   const currentDirection = getUiDirectionById(directionId)!;
-  const sourceLanguage = getLanguageConfig(currentDirection.sourceLanguage)!;
-  const targetLanguage = getLanguageConfig(currentDirection.targetLanguage)!;
   const showDebugPanel = runtimeDefaults.nodeEnv === "development";
   const { state, start, stop } = useRealtimeController({
+    directionMode: currentDirection.mode,
     sourceLanguage: currentDirection.sourceLanguage,
     targetLanguage: currentDirection.targetLanguage,
     scenario: scenarioId,
@@ -191,24 +190,23 @@ export function TranslatorShell({ runtimeDefaults }: TranslatorShellProps) {
           <div className={styles.languageBar}>
             <div className={styles.languageChip}>
               <span>源语言</span>
-              <strong>{sourceLanguage.label}</strong>
+              <strong>{currentDirection.sourceLabel}</strong>
             </div>
             <button
               type="button"
               className={styles.swapButton}
               disabled={controlsLocked}
               onClick={() =>
-                setDirectionId((currentValue) =>
-                  currentValue === "zh-CN__ja-JP" ? "ja-JP__zh-CN" : "zh-CN__ja-JP",
-                )
+                setDirectionId((currentValue) => getNextUiDirectionId(currentValue))
               }
-              aria-label="交换语言方向"
+              aria-label="切换翻译方向模式"
+              title="切换翻译方向模式"
             >
               ⇄
             </button>
             <div className={styles.languageChip}>
               <span>目标语言</span>
-              <strong>{targetLanguage.label}</strong>
+              <strong>{currentDirection.targetLabel}</strong>
             </div>
           </div>
 

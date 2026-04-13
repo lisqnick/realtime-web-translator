@@ -1,5 +1,6 @@
 import { serverEnv } from "@/config/env";
 import { resolveGlossaryHints } from "@/lib/glossary/hints";
+import { isAutoZhJaLanguagePair } from "@/lib/languages/config";
 import { buildTranslationPrompt } from "@/lib/translation/prompt-builder";
 import type { TranslationStreamRequest } from "@/types/translation";
 
@@ -73,13 +74,23 @@ export async function* streamTranslationResponse(
     });
   }
 
-  const glossaryHints = resolveGlossaryHints({
-    sourceLanguage: request.sourceLanguage,
-    targetLanguage: request.targetLanguage,
-    scenario: request.scenario,
-    glossaryId: request.glossaryId ?? null,
-  });
+  const directionMode = isAutoZhJaLanguagePair(
+    request.sourceLanguage,
+    request.targetLanguage,
+  )
+    ? "auto_zh_ja"
+    : "fixed";
+  const glossaryHints =
+    directionMode === "auto_zh_ja"
+      ? []
+      : resolveGlossaryHints({
+          sourceLanguage: request.sourceLanguage,
+          targetLanguage: request.targetLanguage,
+          scenario: request.scenario,
+          glossaryId: request.glossaryId ?? null,
+        });
   const prompt = buildTranslationPrompt({
+    directionMode,
     sourceLanguage: request.sourceLanguage,
     targetLanguage: request.targetLanguage,
     scenario: request.scenario,
