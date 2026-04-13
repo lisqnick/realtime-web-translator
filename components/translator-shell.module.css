@@ -304,8 +304,11 @@
 .controlDotDock {
   position: fixed;
   top: clamp(280px, 58vh, 420px);
-  left: 50%;
-  transform: translate(-50%, -50%);
+  right: max(
+    calc(env(safe-area-inset-right, 0px) + 18px),
+    calc((100vw - min(540px, calc(100vw - 24px))) / 2 + 18px)
+  );
+  transform: translateY(-50%);
   z-index: 12;
   pointer-events: none;
 }
@@ -314,8 +317,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
+  width: 36px;
+  height: 36px;
   padding: 0;
   border: 1px solid rgba(255, 255, 255, 0.45);
   border-radius: 999px;
@@ -333,8 +336,8 @@
 }
 
 .controlDotCore {
-  width: 8px;
-  height: 8px;
+  width: 12px;
+  height: 12px;
   border-radius: 999px;
   background: currentColor;
 }
@@ -401,15 +404,16 @@
 
   .controlDotDock {
     top: clamp(250px, 57vh, 360px);
+    right: calc(env(safe-area-inset-right, 0px) + 16px);
   }
 
   .controlDot {
-    width: 22px;
-    height: 22px;
+    width: 33px;
+    height: 33px;
   }
 
   .controlDotCore {
-    width: 7px;
-    height: 7px;
+    width: 11px;
+    height: 11px;
   }
 }
