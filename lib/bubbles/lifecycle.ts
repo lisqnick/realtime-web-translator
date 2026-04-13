@@ -145,12 +145,16 @@ export function buildBubbleLifecycle(input: {
     currentBubble.correctionCount = currentBubble.sourceChunks.filter(
       (sourceChunk) => sourceChunk.triggerReason === "revision",
     ).length;
-    currentBubble.errorMessage =
-      currentBubble.finalTranslationError ??
+    const latestChunkError =
       [...currentBubble.sourceChunks]
         .reverse()
-        .find((sourceChunk) => sourceChunk.errorMessage)?.errorMessage ??
-      null;
+        .find((sourceChunk) => sourceChunk.errorMessage)?.errorMessage ?? null;
+    const suppressChunkError =
+      currentBubble.finalTranslationStatus === "streaming" ||
+      currentBubble.finalTranslationStatus === "completed";
+    currentBubble.errorMessage =
+      currentBubble.finalTranslationError ??
+      (suppressChunkError ? null : latestChunkError);
 
     previousChunk = chunk;
   }

@@ -48,6 +48,17 @@ interface AutoZhJaTranslationPayload {
   translation: string;
 }
 
+const AUTO_ZH_JA_VALIDATION_ERROR_CODES = new Set([
+  "invalid_auto_detected_language",
+  "invalid_auto_target_language",
+  "invalid_auto_translation_same_as_source",
+  "invalid_auto_translation_json",
+  "empty_auto_translation",
+  "empty_auto_translation_after_normalize",
+]);
+const AUTO_ZH_JA_USER_FACING_ERROR_MESSAGE =
+  "本段自动互译结果不稳定，请继续说下一句或稍后看最终整理结果。";
+
 export class TranslationStreamError extends Error {
   status: number;
   code: string;
@@ -176,6 +187,54 @@ async function* streamAutomaticZhJaTranslationResponse(
     signal?: AbortSignal;
   },
 ): AsyncGenerator<OpenAITranslationStreamEvent> {
+  try {
+    const translation = await runAutomaticZhJaTranslationAttempt(request, options);
+
+    yield {
+      kind: "completed",
+      text: translation,
+    };
+    return;
+  } catch (error) {
+    if (
+      error instanceof TranslationStreamError &&
+      AUTO_ZH_JA_VALIDATION_ERROR_CODES.has(error.code)
+    ) {
+      try {
+        const retryTranslation = await runAutomaticZhJaTranslationAttempt(request, options);
+
+        yield {
+          kind: "completed",
+          text: retryTranslation,
+        };
+        return;
+      } catch (retryError) {
+        if (
+          retryError instanceof TranslationStreamError &&
+          AUTO_ZH_JA_VALIDATION_ERROR_CODES.has(retryError.code)
+        ) {
+          throw new TranslationStreamError({
+            code: retryError.code,
+            message: AUTO_ZH_JA_USER_FACING_ERROR_MESSAGE,
+            status: retryError.status,
+            requestId: retryError.requestId,
+          });
+        }
+
+        throw retryError;
+      }
+    }
+
+    throw error;
+  }
+}
+
+async function runAutomaticZhJaTranslationAttempt(
+  request: TranslationStreamRequest,
+  options?: {
+    signal?: AbortSignal;
+  },
+) {
   const prompt = buildTranslationPrompt({
     directionMode: request.directionMode,
     sourceLanguage: request.sourceLanguage,
@@ -237,12 +296,7 @@ async function* streamAutomaticZhJaTranslationResponse(
   const payload = (await response.json()) as OpenAIResponsesPayload;
   const responseText = extractResponsesOutputText(payload);
   const parsedPayload = parseAutoZhJaTranslationPayload(responseText);
-  const validatedTranslation = validateAutomaticZhJaTranslation(request, parsedPayload);
-
-  yield {
-    kind: "completed",
-    text: validatedTranslation,
-  };
+  return validateAutomaticZhJaTranslation(request, parsedPayload);
 }
 
 async function* parseOpenAITranslationStream(
