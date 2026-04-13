@@ -157,6 +157,17 @@ const initialState: RealtimeControllerState = {
   realtimeEventTimeline: [],
 };
 
+const BACKGROUND_AUTO_STOP_AFTER_MS = 10_000;
+
+function isBackgroundStopRelevantStatus(appStatus: RealtimeControllerState["appStatus"]) {
+  return (
+    appStatus === "requesting_mic" ||
+    appStatus === "creating_session" ||
+    appStatus === "connecting_realtime" ||
+    appStatus === "listening"
+  );
+}
+
 function reducer(
   state: RealtimeControllerState,
   action: ControllerAction,
@@ -299,6 +310,8 @@ export function useRealtimeController(options: {
 }) {
   const [state, dispatch] = useReducer(reducer, initialState);
   const debugPerfLogsRef = useRef(options.debugPerfLogs ?? false);
+  const appStatusRef = useRef(initialState.appStatus);
+  const stopRef = useRef<(() => void) | null>(null);
 
   const activeConnectionRef = useRef<RealtimeBrowserConnection | null>(null);
   const pendingStreamRef = useRef<MediaStream | null>(null);
@@ -313,6 +326,9 @@ export function useRealtimeController(options: {
   const bubbleFinalTranslationTriggeredRef = useRef<Set<string>>(new Set());
   const bubbleDeferredFinalTranslationTimersRef = useRef<Map<string, number>>(new Map());
   const bubbleSealTimerRef = useRef<number | null>(null);
+  const backgroundHiddenSinceRef = useRef<number | null>(null);
+  const backgroundStopTimerRef = useRef<number | null>(null);
+  const backgroundStopTriggeredRef = useRef(false);
   const forceCloseActiveBubbleRef = useRef(false);
   const stabilizerRef = useRef(createTranscriptStabilizer());
   const translationSegmentManagerRef = useRef(createTranslationSegmentManager());
@@ -359,6 +375,72 @@ export function useRealtimeController(options: {
     window.clearTimeout(bubbleSealTimerRef.current);
     bubbleSealTimerRef.current = null;
   }, []);
+
+  const clearBackgroundStopTimer = useCallback(() => {
+    if (backgroundStopTimerRef.current === null) {
+      return;
+    }
+
+    window.clearTimeout(backgroundStopTimerRef.current);
+    backgroundStopTimerRef.current = null;
+  }, []);
+
+  const maybeAutoStopForBackground = useCallback(
+    (options?: { allowVisible?: boolean }) => {
+      const hiddenSince = backgroundHiddenSinceRef.current;
+
+      if (hiddenSince === null) {
+        return false;
+      }
+
+      if (
+        !options?.allowVisible &&
+        typeof document !== "undefined" &&
+        !document.hidden &&
+        document.visibilityState === "visible"
+      ) {
+        return false;
+      }
+
+      if (!isBackgroundStopRelevantStatus(appStatusRef.current)) {
+        return false;
+      }
+
+      if (Date.now() - hiddenSince < BACKGROUND_AUTO_STOP_AFTER_MS) {
+        return false;
+      }
+
+      if (backgroundStopTriggeredRef.current) {
+        return false;
+      }
+
+      backgroundStopTriggeredRef.current = true;
+      stopRef.current?.();
+      return true;
+    },
+    [],
+  );
+
+  const scheduleBackgroundStop = useCallback(() => {
+    clearBackgroundStopTimer();
+
+    if (!isBackgroundStopRelevantStatus(appStatusRef.current)) {
+      return;
+    }
+
+    const hiddenSince = backgroundHiddenSinceRef.current;
+
+    if (hiddenSince === null) {
+      return;
+    }
+
+    const delayMs = Math.max(0, BACKGROUND_AUTO_STOP_AFTER_MS - (Date.now() - hiddenSince));
+
+    backgroundStopTimerRef.current = window.setTimeout(() => {
+      backgroundStopTimerRef.current = null;
+      void maybeAutoStopForBackground();
+    }, delayMs);
+  }, [clearBackgroundStopTimer, maybeAutoStopForBackground]);
 
   const clearDeferredBubbleFinalTranslationTimer = useCallback((bubbleId: string) => {
     const timerId = bubbleDeferredFinalTranslationTimersRef.current.get(bubbleId);
@@ -1043,7 +1125,10 @@ export function useRealtimeController(options: {
 
     translationSchedulerRef.current?.reset();
     clearBubbleSealTimer();
+    clearBackgroundStopTimer();
     clearDeferredBubbleFinalTranslationTimers();
+    backgroundHiddenSinceRef.current = null;
+    backgroundStopTriggeredRef.current = false;
     forceCloseActiveBubbleRef.current = true;
 
     dispatch({
@@ -1067,6 +1152,7 @@ export function useRealtimeController(options: {
       preserveTranslatedSegments: true,
     });
   }, [
+    clearBackgroundStopTimer,
     clearDeferredBubbleFinalTranslationTimers,
     clearBubbleSealTimer,
     cleanupPendingStream,
@@ -1119,6 +1205,9 @@ export function useRealtimeController(options: {
 
     const currentOperationId = operationIdRef.current + 1;
     operationIdRef.current = currentOperationId;
+    backgroundHiddenSinceRef.current = null;
+    backgroundStopTriggeredRef.current = false;
+    clearBackgroundStopTimer();
     dispatch({ type: "clear_error" });
     resetTranscriptSession();
     resetTranslationSession();
@@ -1355,6 +1444,7 @@ export function useRealtimeController(options: {
   }, [
     applyTranscriptEvent,
     cleanupPendingStream,
+    clearBackgroundStopTimer,
     clearDeferredBubbleFinalTranslationTimers,
     clearBubbleSealTimer,
     clearLiveTranscriptOnly,
@@ -1369,6 +1459,31 @@ export function useRealtimeController(options: {
   useEffect(() => {
     debugPerfLogsRef.current = options.debugPerfLogs ?? false;
   }, [options.debugPerfLogs]);
+
+  useEffect(() => {
+    stopRef.current = stop;
+  }, [stop]);
+
+  useEffect(() => {
+    appStatusRef.current = state.appStatus;
+
+    if (!isBackgroundStopRelevantStatus(state.appStatus)) {
+      clearBackgroundStopTimer();
+      backgroundHiddenSinceRef.current = null;
+      backgroundStopTriggeredRef.current = false;
+      return;
+    }
+
+    backgroundStopTriggeredRef.current = false;
+
+    if (typeof document !== "undefined" && document.hidden) {
+      if (backgroundHiddenSinceRef.current === null) {
+        backgroundHiddenSinceRef.current = Date.now();
+      }
+
+      scheduleBackgroundStop();
+    }
+  }, [clearBackgroundStopTimer, scheduleBackgroundStop, state.appStatus]);
 
   useEffect(() => {
     if (translationSchedulerRef.current !== null) {
@@ -1441,6 +1556,56 @@ export function useRealtimeController(options: {
   }, [markPerf, syncTranslationSnapshot]);
 
   useEffect(() => stop, [stop]);
+
+  useEffect(() => {
+    const markHidden = () => {
+      backgroundHiddenSinceRef.current = Date.now();
+      backgroundStopTriggeredRef.current = false;
+      scheduleBackgroundStop();
+    };
+
+    const handleForegroundReturn = () => {
+      clearBackgroundStopTimer();
+
+      const shouldStop = maybeAutoStopForBackground({
+        allowVisible: true,
+      });
+
+      backgroundHiddenSinceRef.current = null;
+
+      if (!shouldStop) {
+        backgroundStopTriggeredRef.current = false;
+      }
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "hidden" || document.hidden) {
+        markHidden();
+        return;
+      }
+
+      handleForegroundReturn();
+    };
+
+    const handlePageHide = () => {
+      markHidden();
+    };
+
+    const handleFreeze = () => {
+      markHidden();
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("pagehide", handlePageHide);
+    document.addEventListener("freeze", handleFreeze as EventListener);
+
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("pagehide", handlePageHide);
+      document.removeEventListener("freeze", handleFreeze as EventListener);
+      clearBackgroundStopTimer();
+    };
+  }, [clearBackgroundStopTimer, maybeAutoStopForBackground, scheduleBackgroundStop]);
 
   useEffect(() => {
     clearBubbleSealTimer();
