@@ -1,13 +1,18 @@
 import type {
+  SelectedLanguagePair,
   ScenarioId,
   SupportedLanguageCode,
   TranslationDirectionMode,
 } from "@/types/config";
 
 export type TranslationTriggerReason = "stabilized" | "final" | "revision";
+export type TranslationJobKind = "segment_first_pass" | "bubble_finalize";
 
 export interface TranslationStreamRequest {
+  jobKind: TranslationJobKind;
+  jobId: string;
   directionMode: TranslationDirectionMode;
+  selectedLanguagePair: SelectedLanguagePair;
   sourceLanguage: SupportedLanguageCode;
   targetLanguage: SupportedLanguageCode;
   text: string;
@@ -86,6 +91,8 @@ export interface TranslatedSegment {
 }
 
 export interface TranslationTaskSummary {
+  jobKind: TranslationJobKind;
+  jobId: string;
   segmentId: string;
   revision: number;
   reason: TranslationTriggerReason;
@@ -102,6 +109,7 @@ export interface TranslationStateSnapshot {
 
 export interface TranslationPromptInput {
   directionMode: TranslationDirectionMode;
+  selectedLanguagePair: SelectedLanguagePair;
   sourceLanguage: SupportedLanguageCode;
   targetLanguage: SupportedLanguageCode;
   scenario: ScenarioId;
@@ -117,10 +125,13 @@ export interface TranslationPrompt {
 }
 
 export interface TranslationScheduleRequest {
+  jobKind: TranslationJobKind;
+  jobId: string;
   segmentId: string;
   revision: number;
   sourceText: string;
   directionMode: TranslationDirectionMode;
+  selectedLanguagePair: SelectedLanguagePair;
   sourceLanguage: SupportedLanguageCode;
   targetLanguage: SupportedLanguageCode;
   previousContext?: string | null;

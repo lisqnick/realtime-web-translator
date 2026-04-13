@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useReducer, useRef } from "react";
 
+import { TRANSLATION_CORE_CONFIG } from "@/config/translation-core";
 import type {
   ScenarioId,
   SupportedLanguageCode,
@@ -54,9 +55,10 @@ import {
 } from "@/lib/realtime/timeline";
 import { createTranscriptStabilizer } from "@/lib/stabilizer";
 import {
-  streamSegmentTranslation,
-  TranslationClientError,
-} from "@/lib/translation/api";
+  createBubbleFinalizeJob,
+  createSegmentFirstPassJob,
+} from "@/lib/translation-core/translation-jobs";
+import { createSelectedLanguagePair } from "@/lib/translation-core/direction-resolver";
 import { createTranslationSegmentManager } from "@/lib/translation/segment-manager";
 import { createTranslationScheduler } from "@/lib/translation/scheduler";
 
@@ -160,8 +162,6 @@ const initialState: RealtimeControllerState = {
   perfSnapshot: createEmptyTranscriptPerfSnapshot(),
   realtimeEventTimeline: [],
 };
-
-const BACKGROUND_AUTO_STOP_AFTER_MS = 10_000;
 
 function isBackgroundStopRelevantStatus(appStatus: RealtimeControllerState["appStatus"]) {
   return (
@@ -327,7 +327,6 @@ export function useRealtimeController(options: {
   const realtimeTimelineRef = useRef<RealtimeTimelineEntry[]>([]);
   const bubbleSnapshotRef = useRef(createEmptyBubbleSnapshot());
   const bubbleFinalTranslationsRef = useRef<Map<string, BubbleFinalTranslation>>(new Map());
-  const bubbleFinalTranslationControllersRef = useRef<Map<string, AbortController>>(new Map());
   const bubbleFinalTranslationTriggeredRef = useRef<Set<string>>(new Set());
   const bubbleDeferredFinalTranslationTimersRef = useRef<Map<string, number>>(new Map());
   const bubbleSealTimerRef = useRef<number | null>(null);
@@ -340,9 +339,9 @@ export function useRealtimeController(options: {
   const translationSchedulerRef = useRef<ReturnType<typeof createTranslationScheduler> | null>(
     null,
   );
-  const bubbleSealAfterMs = getDefaultBubbleAggregationConfig().sealAfterMs;
-  const bubbleFinalTranslateAfterMs =
-    getDefaultBubbleAggregationConfig().finalTranslateAfterMs;
+  const bubbleAggregationConfig = getDefaultBubbleAggregationConfig();
+  const bubbleSealAfterMs = bubbleAggregationConfig.sealAfterMs;
+  const bubbleFinalTranslateAfterMs = bubbleAggregationConfig.finalTranslateAfterMs;
 
   const markPerf = useCallback((key: keyof TranscriptPerfSnapshot) => {
     const nextPerfSnapshot = markTranscriptPerf(perfSnapshotRef.current, key, {
@@ -360,17 +359,15 @@ export function useRealtimeController(options: {
     });
   }, []);
 
-  const abortBubbleFinalTranslations = useCallback((options?: { clearStore?: boolean }) => {
-    for (const controller of bubbleFinalTranslationControllersRef.current.values()) {
-      controller.abort();
-    }
-
-    bubbleFinalTranslationControllersRef.current.clear();
-
-    if (options?.clearStore) {
-      bubbleFinalTranslationsRef.current.clear();
-    }
-  }, []);
+  const getSelectedLanguagePair = useCallback(
+    () =>
+      createSelectedLanguagePair({
+        directionMode: options.directionMode,
+        sourceLanguage: options.sourceLanguage,
+        targetLanguage: options.targetLanguage,
+      }),
+    [options.directionMode, options.sourceLanguage, options.targetLanguage],
+  );
 
   const clearBubbleSealTimer = useCallback(() => {
     if (bubbleSealTimerRef.current === null) {
@@ -411,7 +408,7 @@ export function useRealtimeController(options: {
         return false;
       }
 
-      if (Date.now() - hiddenSince < BACKGROUND_AUTO_STOP_AFTER_MS) {
+      if (Date.now() - hiddenSince < TRANSLATION_CORE_CONFIG.backgroundAutoStopMs) {
         return false;
       }
 
@@ -439,7 +436,10 @@ export function useRealtimeController(options: {
       return;
     }
 
-    const delayMs = Math.max(0, BACKGROUND_AUTO_STOP_AFTER_MS - (Date.now() - hiddenSince));
+    const delayMs = Math.max(
+      0,
+      TRANSLATION_CORE_CONFIG.backgroundAutoStopMs - (Date.now() - hiddenSince),
+    );
 
     backgroundStopTimerRef.current = window.setTimeout(() => {
       backgroundStopTimerRef.current = null;
@@ -472,6 +472,7 @@ export function useRealtimeController(options: {
       translationSnapshot?: TranslationSegmentManagerSnapshot;
       nowMs?: number;
     }) => {
+      const selectedLanguagePair = getSelectedLanguagePair();
       const bubbleSnapshot = buildBubbleSnapshot({
         transcriptSnapshot: input?.transcriptSnapshot ?? transcriptBufferRef.current.snapshot,
         translatedSegments:
@@ -479,8 +480,8 @@ export function useRealtimeController(options: {
             .translatedSegments,
         bubbleFinalTranslations: [...bubbleFinalTranslationsRef.current.values()],
         scenario: options.scenario,
-        sourceLanguage: options.sourceLanguage,
-        targetLanguage: options.targetLanguage,
+        sourceLanguage: selectedLanguagePair.languages[0],
+        targetLanguage: selectedLanguagePair.languages[1],
         forceCloseActiveBubble: forceCloseActiveBubbleRef.current,
         nowMs: input?.nowMs,
       });
@@ -497,7 +498,7 @@ export function useRealtimeController(options: {
         previousBubbleSnapshot,
       };
     },
-    [options.scenario, options.sourceLanguage, options.targetLanguage],
+    [getSelectedLanguagePair, options.scenario],
   );
 
   const buildBubblePreviousContext = useCallback((bubbleId: string) => {
@@ -516,12 +517,12 @@ export function useRealtimeController(options: {
     return previousText.length > 0 ? previousText.join("\n") : null;
   }, []);
 
-  const triggerBubbleFinalTranslation = useCallback(
+  const scheduleBubbleFinalTranslation = useCallback(
     async (bubble: TranslationBubble) => {
       const sourceText = bubble.mergedSourceText.trim();
 
       if (!sourceText) {
-        return;
+        return false;
       }
 
       const existingTranslation = bubbleFinalTranslationsRef.current.get(bubble.bubbleId);
@@ -532,98 +533,32 @@ export function useRealtimeController(options: {
         (existingTranslation.status === "streaming" ||
           existingTranslation.status === "completed")
       ) {
-        return;
+        return false;
       }
 
-      bubbleFinalTranslationControllersRef.current.get(bubble.bubbleId)?.abort();
+      bubbleFinalTranslationTriggeredRef.current.add(bubble.bubbleId);
 
-      const controller = new AbortController();
-      bubbleFinalTranslationControllersRef.current.set(bubble.bubbleId, controller);
-      bubbleFinalTranslationsRef.current.set(bubble.bubbleId, {
-        bubbleId: bubble.bubbleId,
-        sourceText,
-        translatedText: existingTranslation?.translatedText ?? "",
-        status: "streaming",
-        updatedAt: Date.now(),
-        errorMessage: null,
-      });
-      publishBubbleSnapshot();
-
-      let latestText = "";
-      let streamErrorMessage: string | null = null;
-
-      try {
-        await streamSegmentTranslation({
-          request: {
+      const scheduled =
+        (await translationSchedulerRef.current?.scheduleTranslation(
+          createBubbleFinalizeJob({
+            bubbleId: bubble.bubbleId,
+            revision: bubble.chunkCount,
+            sourceText,
             directionMode: options.directionMode,
             sourceLanguage: bubble.sourceLanguage,
             targetLanguage: bubble.targetLanguage,
-            text: sourceText,
             previousContext: buildBubblePreviousContext(bubble.bubbleId),
-            segmentId: bubble.bubbleId,
-            revision: bubble.chunkCount,
-            isFinal: true,
             scenario: bubble.scenario,
-            triggerReason: "final",
-          },
-          signal: controller.signal,
-          onEvent: (event) => {
-            if (event.type === "translation.delta" || event.type === "translation.completed") {
-              latestText = event.text;
-              return;
-            }
+          }),
+        )) ?? false;
 
-            if (event.type === "translation.error") {
-              streamErrorMessage = event.message;
-            }
-          },
-        });
-
-        if (streamErrorMessage) {
-          throw new TranslationClientError({
-            code: "bubble_final_translation_failed",
-            message: streamErrorMessage,
-          });
-        }
-
-        bubbleFinalTranslationsRef.current.set(bubble.bubbleId, {
-          bubbleId: bubble.bubbleId,
-          sourceText,
-          translatedText: latestText,
-          status: "completed",
-          updatedAt: Date.now(),
-          errorMessage: null,
-        });
-      } catch (error) {
-        if (controller.signal.aborted) {
-          return;
-        }
-
-        const message =
-          error instanceof TranslationClientError
-            ? error.message
-            : error instanceof Error
-              ? error.message
-              : "整段最终译文整理失败。";
-
-        bubbleFinalTranslationsRef.current.set(bubble.bubbleId, {
-          bubbleId: bubble.bubbleId,
-          sourceText,
-          translatedText: existingTranslation?.translatedText ?? "",
-          status: "failed",
-          updatedAt: Date.now(),
-          errorMessage: message,
-        });
-      } finally {
-        bubbleFinalTranslationControllersRef.current.delete(bubble.bubbleId);
-        publishBubbleSnapshot();
+      if (!scheduled) {
+        bubbleFinalTranslationTriggeredRef.current.delete(bubble.bubbleId);
       }
+
+      return scheduled;
     },
-    [
-      buildBubblePreviousContext,
-      options.directionMode,
-      publishBubbleSnapshot,
-    ],
+    [buildBubblePreviousContext, options.directionMode],
   );
 
   const syncBubbleSnapshot = useCallback(
@@ -647,8 +582,7 @@ export function useRealtimeController(options: {
           return;
         }
 
-        bubbleFinalTranslationTriggeredRef.current.add(bubble.bubbleId);
-        void triggerBubbleFinalTranslation(bubble);
+        void scheduleBubbleFinalTranslation(bubble);
       };
 
       const scheduleDeferredBubbleFinalTranslation = (bubble: TranslationBubble) => {
@@ -686,8 +620,7 @@ export function useRealtimeController(options: {
             return;
           }
 
-          bubbleFinalTranslationTriggeredRef.current.add(latestBubble.bubbleId);
-          void triggerBubbleFinalTranslation(latestBubble);
+          void scheduleBubbleFinalTranslation(latestBubble);
         }, delayMs);
 
         bubbleDeferredFinalTranslationTimersRef.current.set(bubble.bubbleId, timerId);
@@ -730,7 +663,7 @@ export function useRealtimeController(options: {
       bubbleSealAfterMs,
       clearDeferredBubbleFinalTranslationTimer,
       publishBubbleSnapshot,
-      triggerBubbleFinalTranslation,
+      scheduleBubbleFinalTranslation,
     ],
   );
 
@@ -780,7 +713,7 @@ export function useRealtimeController(options: {
     forceCloseActiveBubbleRef.current = false;
     clearBubbleSealTimer();
     clearDeferredBubbleFinalTranslationTimers();
-    abortBubbleFinalTranslations({ clearStore: true });
+    bubbleFinalTranslationsRef.current.clear();
     bubbleFinalTranslationTriggeredRef.current.clear();
     bubbleSnapshotRef.current = createEmptyBubbleSnapshot();
     stabilizerRef.current.reset();
@@ -801,7 +734,6 @@ export function useRealtimeController(options: {
       transcriptSnapshot,
     });
   }, [
-    abortBubbleFinalTranslations,
     clearDeferredBubbleFinalTranslationTimers,
     clearBubbleSealTimer,
     syncBubbleSnapshot,
@@ -907,21 +839,23 @@ export function useRealtimeController(options: {
       }
 
       const scheduled =
-        (await translationSchedulerRef.current?.scheduleTranslation({
-          segmentId: input.segmentId,
-          revision: input.revision,
-          sourceText: input.sourceText,
-          directionMode: options.directionMode,
-          sourceLanguage: options.sourceLanguage,
-          targetLanguage: options.targetLanguage,
-          previousContext: buildPreviousContext(
-            input.transcriptSnapshot.finalizedSegments,
-            input.segmentId,
-          ),
-          scenario: options.scenario,
-          isFinal: input.isFinal,
-          reason: input.reason,
-        })) ?? false;
+        (await translationSchedulerRef.current?.scheduleTranslation(
+          createSegmentFirstPassJob({
+            segmentId: input.segmentId,
+            revision: input.revision,
+            sourceText: input.sourceText,
+            directionMode: options.directionMode,
+            sourceLanguage: getSelectedLanguagePair().languages[0],
+            targetLanguage: getSelectedLanguagePair().languages[1],
+            previousContext: buildPreviousContext(
+              input.transcriptSnapshot.finalizedSegments,
+              input.segmentId,
+            ),
+            scenario: options.scenario,
+            isFinal: input.isFinal,
+            reason: input.reason,
+          }),
+        )) ?? false;
 
       stabilizerRef.current.markTriggered({
         segmentId: input.segmentId,
@@ -948,8 +882,7 @@ export function useRealtimeController(options: {
       markPerf,
       options.directionMode,
       options.scenario,
-      options.sourceLanguage,
-      options.targetLanguage,
+      getSelectedLanguagePair,
       syncTranslationSnapshot,
     ],
   );
@@ -989,12 +922,13 @@ export function useRealtimeController(options: {
 
       const translationSegment =
         translationSegmentManagerRef.current.getSegment(suggestion.segmentId);
+      const selectedLanguagePair = getSelectedLanguagePair();
       const bubbleSnapshot = buildBubbleSnapshot({
         transcriptSnapshot,
         translatedSegments: translationSegmentManagerRef.current.snapshot.translatedSegments,
         scenario: options.scenario,
-        sourceLanguage: options.sourceLanguage,
-        targetLanguage: options.targetLanguage,
+        sourceLanguage: selectedLanguagePair.languages[0],
+        targetLanguage: selectedLanguagePair.languages[1],
       });
       const containingBubble =
         bubbleSnapshot.bubbles.find((bubble) =>
@@ -1042,7 +976,7 @@ export function useRealtimeController(options: {
         reason: "final",
       });
     },
-    [options.scenario, options.sourceLanguage, options.targetLanguage, scheduleTranslation],
+    [getSelectedLanguagePair, options.scenario, scheduleTranslation],
   );
 
   const applyTranscriptEvent = useCallback(
@@ -1067,10 +1001,11 @@ export function useRealtimeController(options: {
         transcriptSnapshot,
       });
 
+      const selectedLanguagePair = getSelectedLanguagePair();
       const translationSnapshot =
         translationSegmentManagerRef.current.syncTranscriptSnapshot(transcriptSnapshot, {
-          sourceLanguage: options.sourceLanguage,
-          targetLanguage: options.targetLanguage,
+          sourceLanguage: selectedLanguagePair.languages[0],
+          targetLanguage: selectedLanguagePair.languages[1],
           scenario: options.scenario,
         });
       syncTranslationSnapshot(translationSnapshot, transcriptSnapshot);
@@ -1122,10 +1057,9 @@ export function useRealtimeController(options: {
     },
     [
       handleSuggestion,
+      getSelectedLanguagePair,
       markPerf,
       options.scenario,
-      options.sourceLanguage,
-      options.targetLanguage,
       syncTranslationSnapshot,
     ],
   );
@@ -1516,6 +1450,25 @@ export function useRealtimeController(options: {
         onRequestStarted: (request) => {
           markPerf("firstTranslationRequestAt");
 
+          if (request.jobKind === "bubble_finalize") {
+            const existingTranslation =
+              bubbleFinalTranslationsRef.current.get(request.segmentId) ?? null;
+
+            bubbleFinalTranslationsRef.current.set(request.segmentId, {
+              bubbleId: request.segmentId,
+              sourceText: request.sourceText,
+              translatedText: existingTranslation?.translatedText ?? "",
+              status: "streaming",
+              updatedAt: Date.now(),
+              errorMessage: null,
+            });
+            syncBubbleSnapshot({
+              transcriptSnapshot: transcriptBufferRef.current.snapshot,
+              translationSnapshot: translationSegmentManagerRef.current.snapshot,
+            });
+            return;
+          }
+
           const translationSnapshot = translationSegmentManagerRef.current.startTranslation({
             segmentId: request.segmentId,
             revision: request.revision,
@@ -1529,9 +1482,25 @@ export function useRealtimeController(options: {
         onDelta: (event) => {
           markPerf("firstTranslationDeltaAt");
 
+          if (event.request.jobKind === "bubble_finalize") {
+            bubbleFinalTranslationsRef.current.set(event.request.segmentId, {
+              bubbleId: event.request.segmentId,
+              sourceText: event.request.sourceText,
+              translatedText: event.text,
+              status: "streaming",
+              updatedAt: Date.now(),
+              errorMessage: null,
+            });
+            syncBubbleSnapshot({
+              transcriptSnapshot: transcriptBufferRef.current.snapshot,
+              translationSnapshot: translationSegmentManagerRef.current.snapshot,
+            });
+            return;
+          }
+
           const translationSnapshot = translationSegmentManagerRef.current.applyDelta({
-            segmentId: event.segmentId,
-            revision: event.revision,
+            segmentId: event.request.segmentId,
+            revision: event.request.revision,
             delta: event.delta,
           });
           syncTranslationSnapshot(translationSnapshot);
@@ -1539,35 +1508,84 @@ export function useRealtimeController(options: {
         onCompleted: (event) => {
           markPerf("firstTranslationCompleteAt");
 
+          if (event.request.jobKind === "bubble_finalize") {
+            bubbleFinalTranslationsRef.current.set(event.request.segmentId, {
+              bubbleId: event.request.segmentId,
+              sourceText: event.sourceText,
+              translatedText: event.text,
+              status: "completed",
+              updatedAt: Date.now(),
+              errorMessage: null,
+            });
+            syncBubbleSnapshot({
+              transcriptSnapshot: transcriptBufferRef.current.snapshot,
+              translationSnapshot: translationSegmentManagerRef.current.snapshot,
+            });
+            return;
+          }
+
           const translationSnapshot = translationSegmentManagerRef.current.completeTranslation({
-            segmentId: event.segmentId,
-            revision: event.revision,
+            segmentId: event.request.segmentId,
+            revision: event.request.revision,
             text: event.text,
             sourceText: event.sourceText,
           });
           syncTranslationSnapshot(translationSnapshot);
         },
         onError: (event) => {
+          if (event.request.jobKind === "bubble_finalize") {
+            const existingTranslation =
+              bubbleFinalTranslationsRef.current.get(event.request.segmentId) ?? null;
+
+            bubbleFinalTranslationsRef.current.set(event.request.segmentId, {
+              bubbleId: event.request.segmentId,
+              sourceText: event.request.sourceText,
+              translatedText: existingTranslation?.translatedText ?? "",
+              status: "failed",
+              updatedAt: Date.now(),
+              errorMessage: event.message,
+            });
+            syncBubbleSnapshot({
+              transcriptSnapshot: transcriptBufferRef.current.snapshot,
+              translationSnapshot: translationSegmentManagerRef.current.snapshot,
+            });
+            return;
+          }
+
           const translationSnapshot = translationSegmentManagerRef.current.failTranslation({
-            segmentId: event.segmentId,
-            revision: event.revision,
+            segmentId: event.request.segmentId,
+            revision: event.request.revision,
             message: event.message,
           });
           syncTranslationSnapshot(translationSnapshot);
         },
         onSuperseded: (event) => {
+          if (event.request.jobKind === "bubble_finalize") {
+            const existingTranslation =
+              bubbleFinalTranslationsRef.current.get(event.request.segmentId) ?? null;
+
+            if (existingTranslation?.status === "streaming") {
+              bubbleFinalTranslationsRef.current.delete(event.request.segmentId);
+              syncBubbleSnapshot({
+                transcriptSnapshot: transcriptBufferRef.current.snapshot,
+                translationSnapshot: translationSegmentManagerRef.current.snapshot,
+              });
+            }
+            return;
+          }
+
           const translationSnapshot = translationSegmentManagerRef.current.supersedeTranslation({
-            segmentId: event.segmentId,
-            revision: event.revision,
+            segmentId: event.request.segmentId,
+            revision: event.request.revision,
           });
           syncTranslationSnapshot(translationSnapshot);
         },
       },
       {
-        maxConcurrentTasks: 2,
+        maxConcurrentTasks: TRANSLATION_CORE_CONFIG.scheduler.maxConcurrentJobs,
       },
     );
-  }, [markPerf, syncTranslationSnapshot]);
+  }, [markPerf, syncBubbleSnapshot, syncTranslationSnapshot]);
 
   useEffect(() => stop, [stop]);
 

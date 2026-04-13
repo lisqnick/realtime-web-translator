@@ -1,3 +1,4 @@
+import { AUDIO_RUNTIME_CONFIG, getAudioRuntimeTurnDetectionConfig } from "@/config/audio-runtime";
 import { serverEnv } from "@/config/env";
 import type { SupportedLanguageCode } from "@/types/config";
 import type {
@@ -8,13 +9,6 @@ import type {
 
 const OPENAI_REALTIME_CLIENT_SECRETS_URL =
   "https://api.openai.com/v1/realtime/client_secrets";
-const DEFAULT_REALTIME_TURN_DETECTION: RealtimeTurnDetectionConfig = {
-  type: "server_vad",
-  threshold: 0.5,
-  prefixPaddingMs: 300,
-  silenceDurationMs: 240,
-};
-
 interface CreateRealtimeSessionInput {
   sourceLanguage?: SupportedLanguageCode;
 }
@@ -109,7 +103,7 @@ export function mapSupportedLanguageToRealtimeLanguage(
 }
 
 export function buildRealtimeTurnDetectionConfig(): RealtimeTurnDetectionConfig {
-  return DEFAULT_REALTIME_TURN_DETECTION;
+  return getAudioRuntimeTurnDetectionConfig();
 }
 
 export function buildRealtimeSessionConfig({ sourceLanguage }: CreateRealtimeSessionInput) {
@@ -120,7 +114,7 @@ export function buildRealtimeSessionConfig({ sourceLanguage }: CreateRealtimeSes
     audio: {
       input: {
         noise_reduction: {
-          type: "near_field" as const,
+          type: AUDIO_RUNTIME_CONFIG.noiseReduction,
         },
         transcription: {
           model: serverEnv.realtimeTranscriptionModel,
@@ -216,12 +210,13 @@ export async function createRealtimeSession({
         (sourceLanguage ? mapSupportedLanguageToRealtimeLanguage(sourceLanguage) : "zh"),
       turnDetection: {
         type: "server_vad",
-        threshold: turnDetection?.threshold ?? DEFAULT_REALTIME_TURN_DETECTION.threshold,
+        threshold: turnDetection?.threshold ?? getAudioRuntimeTurnDetectionConfig().threshold,
         prefixPaddingMs:
-          turnDetection?.prefix_padding_ms ?? DEFAULT_REALTIME_TURN_DETECTION.prefixPaddingMs,
+          turnDetection?.prefix_padding_ms ??
+          getAudioRuntimeTurnDetectionConfig().prefixPaddingMs,
         silenceDurationMs:
           turnDetection?.silence_duration_ms ??
-          DEFAULT_REALTIME_TURN_DETECTION.silenceDurationMs,
+          getAudioRuntimeTurnDetectionConfig().silenceDurationMs,
       },
       include: normalizedSession.include ?? [],
     },

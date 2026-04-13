@@ -1,4 +1,7 @@
-import { streamSegmentTranslation, TranslationClientError } from "@/lib/translation/api";
+import { TRANSLATION_CORE_CONFIG } from "@/config/translation-core";
+import { streamTranslationJob } from "@/lib/translation-core/translator";
+import { isSegmentFirstPassJob } from "@/lib/translation-core/translation-jobs";
+import { TranslationClientError } from "@/lib/translation/api";
 import type {
   TranslationScheduleRequest,
   TranslationTaskSummary,
@@ -6,11 +9,13 @@ import type {
 
 interface TranslationSchedulerConfig {
   maxConcurrentTasks: number;
+  retryAttempts: number;
 }
 
 interface ActiveTranslationTask {
   request: TranslationScheduleRequest;
   controller: AbortController;
+  attempt: number;
 }
 
 export interface TranslationSchedulerSnapshot {
@@ -23,29 +28,21 @@ export interface TranslationSchedulerCallbacks {
   onSnapshot?: (snapshot: TranslationSchedulerSnapshot) => void;
   onRequestStarted?: (request: TranslationScheduleRequest) => void;
   onDelta?: (input: {
-    segmentId: string;
-    revision: number;
+    request: TranslationScheduleRequest;
     delta: string;
     text: string;
-    reason: TranslationScheduleRequest["reason"];
   }) => void;
   onCompleted?: (input: {
-    segmentId: string;
-    revision: number;
+    request: TranslationScheduleRequest;
     text: string;
     sourceText: string;
-    reason: TranslationScheduleRequest["reason"];
   }) => void;
   onError?: (input: {
-    segmentId: string;
-    revision: number;
+    request: TranslationScheduleRequest;
     message: string;
-    reason: TranslationScheduleRequest["reason"];
   }) => void;
   onSuperseded?: (input: {
-    segmentId: string;
-    revision: number;
-    reason: TranslationScheduleRequest["reason"];
+    request: TranslationScheduleRequest;
   }) => void;
 }
 
@@ -56,7 +53,8 @@ export interface TranslationScheduler {
 }
 
 const DEFAULT_SCHEDULER_CONFIG: TranslationSchedulerConfig = {
-  maxConcurrentTasks: 2,
+  maxConcurrentTasks: TRANSLATION_CORE_CONFIG.scheduler.maxConcurrentJobs,
+  retryAttempts: 1,
 };
 
 export function createTranslationScheduler(
@@ -75,12 +73,16 @@ export function createTranslationScheduler(
 
   const getSnapshot = (): TranslationSchedulerSnapshot => ({
     activeTasks: [...activeTasks.values()].map((task) => ({
+      jobKind: task.request.jobKind,
+      jobId: task.request.jobId,
       segmentId: task.request.segmentId,
       revision: task.request.revision,
       reason: task.request.reason,
       status: "streaming",
     })),
     queuedTasks: queuedRequests.map((request) => ({
+      jobKind: request.jobKind,
+      jobId: request.jobId,
       segmentId: request.segmentId,
       revision: request.revision,
       reason: request.reason,
@@ -99,9 +101,13 @@ export function createTranslationScheduler(
       queuedRequests.length > 0
     ) {
       const nextIndex = queuedRequests.findIndex((request) => {
-        const desiredRevision = desiredRevisionBySegment.get(request.segmentId) ?? 0;
+        if (isSegmentFirstPassJob(request)) {
+          const desiredRevision = desiredRevisionBySegment.get(request.segmentId) ?? 0;
 
-        return desiredRevision === request.revision && !activeTasks.has(request.segmentId);
+          return desiredRevision === request.revision && !activeTasks.has(request.jobId);
+        }
+
+        return !activeTasks.has(request.jobId);
       });
 
       if (nextIndex === -1) {
@@ -114,34 +120,32 @@ export function createTranslationScheduler(
     }
   };
 
-  const startTask = async (request: TranslationScheduleRequest) => {
+  const startTask = async (
+    request: TranslationScheduleRequest,
+    attempt = 0,
+  ) => {
     const controller = new AbortController();
-    activeTasks.set(request.segmentId, {
+    activeTasks.set(request.jobId, {
       request,
       controller,
+      attempt,
     });
     emitSnapshot();
     callbacks.onRequestStarted?.(request);
 
     try {
-      await streamSegmentTranslation({
-        request: {
-          directionMode: request.directionMode,
-          sourceLanguage: request.sourceLanguage,
-          targetLanguage: request.targetLanguage,
-          text: request.sourceText,
-          previousContext: request.previousContext ?? null,
-          segmentId: request.segmentId,
-          revision: request.revision,
-          isFinal: request.isFinal,
-          scenario: request.scenario,
-          triggerReason: request.reason,
-        },
+      await streamTranslationJob({
+        request,
         signal: controller.signal,
         onEvent: (event) => {
-          const desiredRevision = desiredRevisionBySegment.get(request.segmentId) ?? 0;
+          if (event.revision !== request.revision) {
+            return;
+          }
 
-          if (event.revision !== request.revision || desiredRevision !== request.revision) {
+          if (
+            isSegmentFirstPassJob(request) &&
+            (desiredRevisionBySegment.get(request.segmentId) ?? 0) !== request.revision
+          ) {
             return;
           }
 
@@ -151,11 +155,9 @@ export function createTranslationScheduler(
 
           if (event.type === "translation.delta") {
             callbacks.onDelta?.({
-              segmentId: event.segmentId,
-              revision: event.revision,
+              request,
               delta: event.delta,
               text: event.text,
-              reason: request.reason,
             });
             return;
           }
@@ -163,47 +165,41 @@ export function createTranslationScheduler(
           if (event.type === "translation.completed") {
             completedRequestKeys.add(buildRequestKey(request));
             callbacks.onCompleted?.({
-              segmentId: event.segmentId,
-              revision: event.revision,
+              request,
               text: event.text,
               sourceText: request.sourceText,
-              reason: request.reason,
             });
             return;
           }
 
           callbacks.onError?.({
-            segmentId: event.segmentId,
-            revision: event.revision,
+            request,
             message: event.message,
-            reason: request.reason,
           });
         },
       });
     } catch (error) {
       if (controller.signal.aborted) {
         callbacks.onSuperseded?.({
-          segmentId: request.segmentId,
-          revision: request.revision,
-          reason: request.reason,
+          request,
         });
+      } else if (attempt < resolvedConfig.retryAttempts) {
+        queuedRequests.unshift(request);
       } else {
         const message =
           error instanceof TranslationClientError
             ? error.message
             : error instanceof Error
               ? error.message
-              : `片段 ${request.segmentId} 的翻译任务失败。`;
+              : `翻译任务 ${request.jobId} 失败。`;
 
         callbacks.onError?.({
-          segmentId: request.segmentId,
-          revision: request.revision,
+          request,
           message,
-          reason: request.reason,
         });
       }
     } finally {
-      activeTasks.delete(request.segmentId);
+      activeTasks.delete(request.jobId);
       emitSnapshot();
       void processQueue();
     }
@@ -215,50 +211,63 @@ export function createTranslationScheduler(
     },
     async scheduleTranslation(request) {
       const requestKey = buildRequestKey(request);
-      const desiredRevision = desiredRevisionBySegment.get(request.segmentId) ?? 0;
 
-      if (completedRequestKeys.has(requestKey) || desiredRevision > request.revision) {
+      if (completedRequestKeys.has(requestKey)) {
         return false;
       }
 
-      if (desiredRevision === request.revision) {
-        if (
-          queuedRequests.some(
-            (queuedRequest) =>
-              queuedRequest.segmentId === request.segmentId &&
-              queuedRequest.revision === request.revision,
-          )
-        ) {
+      if (isSegmentFirstPassJob(request)) {
+        const desiredRevision = desiredRevisionBySegment.get(request.segmentId) ?? 0;
+
+        if (desiredRevision > request.revision) {
           return false;
         }
 
-        const activeTask = activeTasks.get(request.segmentId);
+        if (desiredRevision === request.revision) {
+          if (
+            queuedRequests.some((queuedRequest) => queuedRequest.jobId === request.jobId)
+          ) {
+            return false;
+          }
 
-        if (activeTask?.request.revision === request.revision) {
+          if (activeTasks.has(request.jobId)) {
+            return false;
+          }
+        }
+
+        if (request.revision > desiredRevision) {
+          desiredRevisionBySegment.set(request.segmentId, request.revision);
+          recentRevisionCount += desiredRevision > 0 ? 1 : 0;
+        }
+
+        for (let queueIndex = queuedRequests.length - 1; queueIndex >= 0; queueIndex -= 1) {
+          const queuedRequest = queuedRequests[queueIndex];
+
+          if (
+            isSegmentFirstPassJob(queuedRequest) &&
+            queuedRequest.segmentId === request.segmentId &&
+            queuedRequest.revision < request.revision
+          ) {
+            queuedRequests.splice(queueIndex, 1);
+          }
+        }
+
+        for (const task of activeTasks.values()) {
+          if (
+            isSegmentFirstPassJob(task.request) &&
+            task.request.segmentId === request.segmentId &&
+            task.request.revision < request.revision
+          ) {
+            task.controller.abort();
+          }
+        }
+      } else {
+        if (
+          queuedRequests.some((queuedRequest) => queuedRequest.jobId === request.jobId) ||
+          activeTasks.has(request.jobId)
+        ) {
           return false;
         }
-      }
-
-      if (request.revision > desiredRevision) {
-        desiredRevisionBySegment.set(request.segmentId, request.revision);
-        recentRevisionCount += desiredRevision > 0 ? 1 : 0;
-      }
-
-      for (let queueIndex = queuedRequests.length - 1; queueIndex >= 0; queueIndex -= 1) {
-        const queuedRequest = queuedRequests[queueIndex];
-
-        if (
-          queuedRequest.segmentId === request.segmentId &&
-          queuedRequest.revision < request.revision
-        ) {
-          queuedRequests.splice(queueIndex, 1);
-        }
-      }
-
-      const activeTask = activeTasks.get(request.segmentId);
-
-      if (activeTask && activeTask.request.revision < request.revision) {
-        activeTask.controller.abort();
       }
 
       queuedRequests.push(request);
@@ -282,5 +291,5 @@ export function createTranslationScheduler(
 }
 
 function buildRequestKey(request: TranslationScheduleRequest) {
-  return `${request.segmentId}:${request.revision}`;
+  return `${request.jobKind}:${request.jobId}:${request.revision}`;
 }

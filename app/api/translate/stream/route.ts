@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { isSupportedLanguageCode } from "@/lib/languages/config";
+import { isTranslationJobKind } from "@/lib/translation-core/translation-jobs";
 import {
   streamTranslationResponse,
   TranslationStreamError,
@@ -127,6 +128,56 @@ function validateTranslationRequest(payload: TranslationStreamRequest | null) {
     return {
       code: "missing_payload",
       message: "缺少翻译请求参数。",
+      status: 400,
+    };
+  }
+
+  if (!isTranslationJobKind(payload.jobKind)) {
+    return {
+      code: "invalid_job_kind",
+      message: "jobKind 不在当前支持范围内。",
+      status: 400,
+    };
+  }
+
+  if (!payload.jobId?.trim()) {
+    return {
+      code: "missing_job_id",
+      message: "jobId 不能为空。",
+      status: 400,
+    };
+  }
+
+  if (
+    !payload.selectedLanguagePair ||
+    !Array.isArray(payload.selectedLanguagePair.languages) ||
+    payload.selectedLanguagePair.languages.length !== 2
+  ) {
+    return {
+      code: "invalid_selected_language_pair",
+      message: "selectedLanguagePair 必须包含两个语言。",
+      status: 400,
+    };
+  }
+
+  if (
+    !isSupportedLanguageCode(payload.selectedLanguagePair.languages[0]) ||
+    !isSupportedLanguageCode(payload.selectedLanguagePair.languages[1])
+  ) {
+    return {
+      code: "invalid_selected_language_pair_language",
+      message: "selectedLanguagePair.languages 不在当前支持范围内。",
+      status: 400,
+    };
+  }
+
+  if (
+    payload.selectedLanguagePair.mode !== "fixed" &&
+    payload.selectedLanguagePair.mode !== "bidirectional_auto"
+  ) {
+    return {
+      code: "invalid_translation_mode",
+      message: "selectedLanguagePair.mode 不在当前支持范围内。",
       status: 400,
     };
   }

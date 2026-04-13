@@ -1,6 +1,11 @@
 import { serverEnv } from "@/config/env";
 import { resolveGlossaryHints } from "@/lib/glossary/hints";
-import { normalizeToSimplifiedChinese } from "@/lib/translation/normalize-chinese";
+import {
+  buildAutomaticTranslationJsonSchema,
+  isBidirectionalAutoPairSupported,
+  validateAutomaticTranslationResult,
+} from "@/lib/translation-core/language-policy";
+import type { AutomaticTranslationStructuredOutput } from "@/lib/translation-core/types";
 import { buildTranslationPrompt } from "@/lib/translation/prompt-builder";
 import type { TranslationStreamRequest } from "@/types/translation";
 
@@ -38,17 +43,15 @@ interface OpenAIResponsesPayload {
     content?: Array<{
       type?: string;
       text?: string;
+      parsed?: unknown;
+      refusal?: string;
     }>;
   }>;
   output_text?: string;
+  output_parsed?: unknown;
 }
 
-interface AutoZhJaTranslationPayload {
-  detected_source_language: "zh" | "ja";
-  translation: string;
-}
-
-const AUTO_ZH_JA_VALIDATION_ERROR_CODES = new Set([
+const AUTO_TRANSLATION_VALIDATION_ERROR_CODES = new Set([
   "invalid_auto_detected_language",
   "invalid_auto_target_language",
   "invalid_auto_translation_same_as_source",
@@ -56,7 +59,7 @@ const AUTO_ZH_JA_VALIDATION_ERROR_CODES = new Set([
   "empty_auto_translation",
   "empty_auto_translation_after_normalize",
 ]);
-const AUTO_ZH_JA_USER_FACING_ERROR_MESSAGE =
+const AUTO_TRANSLATION_USER_FACING_ERROR_MESSAGE =
   "本段自动互译结果不稳定，请继续说下一句或稍后看最终整理结果。";
 
 export class TranslationStreamError extends Error {
@@ -100,8 +103,8 @@ export async function* streamTranslationResponse(
     });
   }
 
-  if (request.directionMode === "auto_zh_ja") {
-    yield* streamAutomaticZhJaTranslationResponse(request, options);
+  if (request.selectedLanguagePair.mode === "bidirectional_auto") {
+    yield* streamBidirectionalAutoTranslationResponse(request, options);
     return;
   }
 
@@ -113,6 +116,7 @@ export async function* streamTranslationResponse(
   });
   const prompt = buildTranslationPrompt({
     directionMode: request.directionMode,
+    selectedLanguagePair: request.selectedLanguagePair,
     sourceLanguage: request.sourceLanguage,
     targetLanguage: request.targetLanguage,
     scenario: request.scenario,
@@ -181,14 +185,14 @@ export async function* streamTranslationResponse(
   yield* parseOpenAITranslationStream(response.body);
 }
 
-async function* streamAutomaticZhJaTranslationResponse(
+async function* streamBidirectionalAutoTranslationResponse(
   request: TranslationStreamRequest,
   options?: {
     signal?: AbortSignal;
   },
 ): AsyncGenerator<OpenAITranslationStreamEvent> {
   try {
-    const translation = await runAutomaticZhJaTranslationAttempt(request, options);
+    const translation = await runBidirectionalAutoTranslationAttempt(request, options);
 
     yield {
       kind: "completed",
@@ -198,10 +202,10 @@ async function* streamAutomaticZhJaTranslationResponse(
   } catch (error) {
     if (
       error instanceof TranslationStreamError &&
-      AUTO_ZH_JA_VALIDATION_ERROR_CODES.has(error.code)
+      AUTO_TRANSLATION_VALIDATION_ERROR_CODES.has(error.code)
     ) {
       try {
-        const retryTranslation = await runAutomaticZhJaTranslationAttempt(request, options);
+        const retryTranslation = await runBidirectionalAutoTranslationAttempt(request, options);
 
         yield {
           kind: "completed",
@@ -211,11 +215,11 @@ async function* streamAutomaticZhJaTranslationResponse(
       } catch (retryError) {
         if (
           retryError instanceof TranslationStreamError &&
-          AUTO_ZH_JA_VALIDATION_ERROR_CODES.has(retryError.code)
+          AUTO_TRANSLATION_VALIDATION_ERROR_CODES.has(retryError.code)
         ) {
           throw new TranslationStreamError({
             code: retryError.code,
-            message: AUTO_ZH_JA_USER_FACING_ERROR_MESSAGE,
+            message: AUTO_TRANSLATION_USER_FACING_ERROR_MESSAGE,
             status: retryError.status,
             requestId: retryError.requestId,
           });
@@ -229,14 +233,23 @@ async function* streamAutomaticZhJaTranslationResponse(
   }
 }
 
-async function runAutomaticZhJaTranslationAttempt(
+async function runBidirectionalAutoTranslationAttempt(
   request: TranslationStreamRequest,
   options?: {
     signal?: AbortSignal;
   },
 ) {
+  if (!isBidirectionalAutoPairSupported(request.selectedLanguagePair)) {
+    throw new TranslationStreamError({
+      code: "unsupported_bidirectional_language_pair",
+      message: "当前自动互译语言对尚未支持。",
+      status: 400,
+    });
+  }
+
   const prompt = buildTranslationPrompt({
     directionMode: request.directionMode,
+    selectedLanguagePair: request.selectedLanguagePair,
     sourceLanguage: request.sourceLanguage,
     targetLanguage: request.targetLanguage,
     scenario: request.scenario,
@@ -270,7 +283,10 @@ async function runAutomaticZhJaTranslationAttempt(
       ],
       text: {
         format: {
-          type: "text",
+          type: "json_schema",
+          name: "bidirectional_translation_result",
+          schema: buildAutomaticTranslationJsonSchema(request.selectedLanguagePair),
+          strict: true,
         },
       },
     }),
@@ -294,9 +310,24 @@ async function runAutomaticZhJaTranslationAttempt(
   }
 
   const payload = (await response.json()) as OpenAIResponsesPayload;
-  const responseText = extractResponsesOutputText(payload);
-  const parsedPayload = parseAutoZhJaTranslationPayload(responseText);
-  return validateAutomaticZhJaTranslation(request, parsedPayload);
+  const parsedPayload = extractStructuredAutomaticTranslationPayload(payload);
+  const validationResult = validateAutomaticTranslationResult({
+    selectedLanguagePair: request.selectedLanguagePair,
+    sourceText: request.text,
+    detectedSourceLanguage: parsedPayload.detected_source_language ?? null,
+    translation: parsedPayload.translation,
+  });
+
+  if (!validationResult.ok) {
+    throw new TranslationStreamError({
+      code: validationResult.code,
+      message: validationResult.message,
+      status: 502,
+      requestId,
+    });
+  }
+
+  return validationResult.translation;
 }
 
 async function* parseOpenAITranslationStream(
@@ -412,6 +443,68 @@ async function* parseOpenAITranslationStream(
   }
 }
 
+function extractStructuredAutomaticTranslationPayload(
+  payload: OpenAIResponsesPayload,
+): AutomaticTranslationStructuredOutput {
+  if (isStructuredAutomaticTranslationPayload(payload.output_parsed)) {
+    return payload.output_parsed;
+  }
+
+  const contentItems =
+    payload.output?.flatMap((item) => item.content ?? []) ?? [];
+
+  for (const contentItem of contentItems) {
+    if (isStructuredAutomaticTranslationPayload(contentItem.parsed)) {
+      return contentItem.parsed;
+    }
+
+    if (typeof contentItem.refusal === "string" && contentItem.refusal.trim()) {
+      throw new TranslationStreamError({
+        code: "invalid_auto_translation_json",
+        message: "自动互译被模型拒绝。",
+        status: 502,
+      });
+    }
+
+    if (typeof contentItem.text === "string" && contentItem.text.trim()) {
+      const parsedText = safeParseJson(contentItem.text);
+
+      if (isStructuredAutomaticTranslationPayload(parsedText)) {
+        return parsedText;
+      }
+    }
+  }
+
+  if (typeof payload.output_text === "string" && payload.output_text.trim()) {
+    const parsedOutputText = safeParseJson(payload.output_text);
+
+    if (isStructuredAutomaticTranslationPayload(parsedOutputText)) {
+      return parsedOutputText;
+    }
+  }
+
+  throw new TranslationStreamError({
+    code: "invalid_auto_translation_json",
+    message: "自动互译返回的结构化结果无法解析。",
+    status: 502,
+  });
+}
+
+function isStructuredAutomaticTranslationPayload(
+  value: unknown,
+): value is AutomaticTranslationStructuredOutput {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const candidate = value as Record<string, unknown>;
+
+  return (
+    typeof candidate.detected_source_language === "string" &&
+    typeof candidate.translation === "string"
+  );
+}
+
 function parseSseEvent(chunk: string): ParsedSseEvent | null {
   const lines = chunk
     .split("\n")
@@ -450,152 +543,16 @@ function safeParseJson(payload: string) {
   }
 }
 
-function extractResponsesOutputText(payload: OpenAIResponsesPayload) {
-  const directText = typeof payload.output_text === "string" ? payload.output_text : null;
-
-  if (directText?.trim()) {
-    return directText;
-  }
-
-  const nestedText =
-    payload.output
-      ?.flatMap((item) => item.content ?? [])
-      .find((content) => content.type === "output_text" && typeof content.text === "string")
-      ?.text ?? "";
-
-  if (nestedText.trim()) {
-    return nestedText;
-  }
-
-  throw new TranslationStreamError({
-    code: "invalid_auto_translation_response",
-    message: "自动互译没有返回可解析的 JSON 内容。",
-    status: 502,
-  });
-}
-
-function parseAutoZhJaTranslationPayload(text: string): AutoZhJaTranslationPayload {
-  const trimmed = text.trim();
-  const direct = safeParseJson(trimmed) as AutoZhJaTranslationPayload | null;
-
-  if (direct && typeof direct === "object") {
-    return direct;
-  }
-
-  const objectMatch = trimmed.match(/\{[\s\S]*\}/);
-
-  if (objectMatch) {
-    const extracted = safeParseJson(objectMatch[0]) as AutoZhJaTranslationPayload | null;
-
-    if (extracted && typeof extracted === "object") {
-      return extracted;
-    }
-  }
-
-  throw new TranslationStreamError({
-    code: "invalid_auto_translation_json",
-    message: "自动互译返回的 JSON 无法解析。",
-    status: 502,
-  });
-}
-
-function validateAutomaticZhJaTranslation(
-  request: TranslationStreamRequest,
-  payload: AutoZhJaTranslationPayload,
-) {
-  if (
-    payload.detected_source_language !== "zh" &&
-    payload.detected_source_language !== "ja"
-  ) {
-    throw new TranslationStreamError({
-      code: "invalid_auto_detected_language",
-      message: "自动互译返回了无效的 detected_source_language。",
-      status: 502,
-    });
-  }
-
-  const sourceText = normalizeComparableText(request.text);
-  let translation = payload.translation?.trim() ?? "";
-
-  if (!translation) {
-    throw new TranslationStreamError({
-      code: "empty_auto_translation",
-      message: "自动互译返回了空的 translation。",
-      status: 502,
-    });
-  }
-
-  if (payload.detected_source_language === "ja") {
-    translation = normalizeToSimplifiedChinese(translation).trim();
-  }
-
-  if (!translation) {
-    throw new TranslationStreamError({
-      code: "empty_auto_translation_after_normalize",
-      message: "自动互译结果在简体化后为空。",
-      status: 502,
-    });
-  }
-
-  if (normalizeComparableText(translation) === sourceText) {
-    throw new TranslationStreamError({
-      code: "invalid_auto_translation_same_as_source",
-      message: "自动互译结果与原文相同，已拒绝该结果。",
-      status: 502,
-    });
-  }
-
-  if (payload.detected_source_language === "zh" && !looksLikeJapaneseTranslation(translation)) {
-    throw new TranslationStreamError({
-      code: "invalid_auto_target_language",
-      message: "自动互译未输出可信的日文结果。",
-      status: 502,
-    });
-  }
-
-  if (payload.detected_source_language === "ja" && containsJapaneseKana(translation)) {
-    throw new TranslationStreamError({
-      code: "invalid_auto_target_language",
-      message: "自动互译未输出可信的简体中文结果。",
-      status: 502,
-    });
-  }
-
-  return translation;
-}
-
-function normalizeComparableText(text: string) {
-  return text.trim().replace(/\s+/g, " ");
-}
-
-function containsJapaneseKana(text: string) {
-  return /[\u3040-\u30ff\u31f0-\u31ff\uff66-\uff9d]/.test(text);
-}
-
-function looksLikeJapaneseTranslation(text: string) {
-  return containsJapaneseKana(text);
-}
-
 async function extractOpenAIErrorMessage(response: Response) {
   try {
     const payload = (await response.json()) as OpenAIErrorPayload;
-
     if (payload.error?.message) {
       return payload.error.message;
     }
   } catch {
-    // Ignore JSON parsing failures and fall back to text.
+    // Ignore JSON parsing errors and fall back to text.
   }
 
-  try {
-    const text = await response.text();
-
-    if (text) {
-      return text;
-    }
-  } catch {
-    // Ignore text parsing failures.
-  }
-
-  return "OpenAI 翻译请求失败。";
+  const text = await response.text().catch(() => "");
+  return text || "OpenAI 翻译请求失败。";
 }

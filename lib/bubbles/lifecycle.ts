@@ -114,7 +114,7 @@ export function buildBubbleLifecycle(input: {
       currentBubble.sourceChunks,
       (sourceChunk) => sourceChunk.sourceText,
     );
-    const chunkMergedTranslationText = joinChunkText(
+    currentBubble.chunkMergedTranslationText = joinChunkText(
       currentBubble.sourceChunks,
       (sourceChunk) =>
         sourceChunk.translationStatus === "streaming"
@@ -127,7 +127,8 @@ export function buildBubbleLifecycle(input: {
     );
     currentBubble.finalTranslationStatus = bubbleFinalTranslation?.status ?? "idle";
     currentBubble.finalTranslationText =
-      bubbleFinalTranslation?.status === "completed" &&
+      (bubbleFinalTranslation?.status === "completed" ||
+        bubbleFinalTranslation?.status === "streaming") &&
       bubbleFinalTranslation.translatedText.trim().length > 0
         ? bubbleFinalTranslation.translatedText
         : null;
@@ -135,8 +136,7 @@ export function buildBubbleLifecycle(input: {
       bubbleFinalTranslation?.status === "failed"
         ? bubbleFinalTranslation.errorMessage
         : null;
-    currentBubble.mergedTranslationText =
-      currentBubble.finalTranslationText ?? chunkMergedTranslationText;
+    currentBubble.mergedTranslationText = currentBubble.chunkMergedTranslationText;
     currentBubble.isTranslating = currentBubble.sourceChunks.some(
       (sourceChunk) =>
         sourceChunk.translationStatus === "streaming" ||
@@ -145,16 +145,7 @@ export function buildBubbleLifecycle(input: {
     currentBubble.correctionCount = currentBubble.sourceChunks.filter(
       (sourceChunk) => sourceChunk.triggerReason === "revision",
     ).length;
-    const latestChunkError =
-      [...currentBubble.sourceChunks]
-        .reverse()
-        .find((sourceChunk) => sourceChunk.errorMessage)?.errorMessage ?? null;
-    const suppressChunkError =
-      currentBubble.finalTranslationStatus === "streaming" ||
-      currentBubble.finalTranslationStatus === "completed";
-    currentBubble.errorMessage =
-      currentBubble.finalTranslationError ??
-      (suppressChunkError ? null : latestChunkError);
+    currentBubble.errorMessage = null;
 
     previousChunk = chunk;
   }
@@ -233,6 +224,10 @@ function createBubble(input: {
     bubbleId: `bubble:${input.firstChunk.segmentId}`,
     sourceChunks: [input.firstChunk],
     mergedSourceText: input.firstChunk.sourceText,
+    chunkMergedTranslationText:
+      input.firstChunk.translationStatus === "streaming"
+        ? input.firstChunk.liveTranslatedText || input.firstChunk.translatedText
+        : input.firstChunk.translatedText || input.firstChunk.liveTranslatedText,
     mergedTranslationText:
       input.firstChunk.translationStatus === "streaming"
         ? input.firstChunk.liveTranslatedText || input.firstChunk.translatedText
@@ -240,6 +235,7 @@ function createBubble(input: {
     createdAt: input.firstChunk.createdAt,
     updatedAt: input.firstChunk.updatedAt,
     status: "live",
+    displayStatus: "collecting",
     closedAt: null,
     closeReason: null,
     scenario: input.scenario,
@@ -254,7 +250,7 @@ function createBubble(input: {
     finalTranslationStatus: "idle",
     finalTranslationText: null,
     finalTranslationError: null,
-    errorMessage: input.firstChunk.errorMessage,
+    errorMessage: null,
   };
 }
 

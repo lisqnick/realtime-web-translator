@@ -8,20 +8,13 @@ import type {
 import type { TranscriptStateSnapshot } from "@/types/realtime";
 import type { TranslatedSegment } from "@/types/translation";
 
+import { getBubbleAggregationConfig } from "@/config/translation-core";
 import { buildBubbleLifecycle } from "@/lib/bubbles/lifecycle";
 import { applyBubbleSealing } from "@/lib/bubbles/sealing";
-
-const DEFAULT_BUBBLE_AGGREGATION_CONFIG: BubbleAggregationConfig = {
-  appendWithinMs: 1200,
-  splitAfterMs: 1500,
-  sealAfterMs: 3000,
-  finalTranslateAfterMs: 6000,
-  maxChunksPerBubble: 5,
-  correctionTailSize: 2,
-};
+import { projectBubbleTranslation } from "@/lib/translation-core/translation-projection";
 
 export function getDefaultBubbleAggregationConfig(): BubbleAggregationConfig {
-  return DEFAULT_BUBBLE_AGGREGATION_CONFIG;
+  return getBubbleAggregationConfig();
 }
 
 export function createEmptyBubbleSnapshot(): BubbleSnapshot {
@@ -53,7 +46,7 @@ export function buildBubbleSnapshot(input: {
   nowMs?: number;
 }): BubbleSnapshot {
   const config = {
-    ...DEFAULT_BUBBLE_AGGREGATION_CONFIG,
+    ...getBubbleAggregationConfig(),
     ...input.config,
   };
   const nowMs = input.nowMs ?? Date.now();
@@ -79,6 +72,12 @@ export function buildBubbleSnapshot(input: {
     nowMs,
     config,
   });
+  for (const bubble of bubbles) {
+    const projection = projectBubbleTranslation(bubble);
+    bubble.mergedTranslationText = projection.mergedTranslationText;
+    bubble.displayStatus = projection.displayStatus;
+    bubble.errorMessage = projection.displayError;
+  }
 
   const activeBubble = bubbles.at(-1) ?? null;
   debug.activeBubbleId = activeBubble?.bubbleId ?? null;
@@ -97,7 +96,7 @@ export function buildBubbleSnapshot(input: {
 export function getBubbleTailSegmentIds(
   bubbles: TranslationBubble[],
   segmentId: string,
-  tailSize = DEFAULT_BUBBLE_AGGREGATION_CONFIG.correctionTailSize,
+  tailSize = getBubbleAggregationConfig().correctionTailSize,
 ) {
   const bubble = bubbles.find((candidate) =>
     candidate.sourceChunks.some((chunk) => chunk.segmentId === segmentId),

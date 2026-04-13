@@ -12,6 +12,12 @@ export type BubbleFinalTranslationStatus =
   | "streaming"
   | "completed"
   | "failed";
+export type BubbleDisplayStatus =
+  | "collecting"
+  | "sealed"
+  | "finalizing"
+  | "finalized"
+  | "failed";
 export type BubbleOpenReason =
   | "no_active_bubble"
   | "gap_too_large"
@@ -74,10 +80,12 @@ export interface TranslationBubble {
   bubbleId: string;
   sourceChunks: BubbleChunk[];
   mergedSourceText: string;
+  chunkMergedTranslationText: string;
   mergedTranslationText: string;
   createdAt: number;
   updatedAt: number;
   status: BubbleStatus;
+  displayStatus: BubbleDisplayStatus;
   closedAt: number | null;
   closeReason: BubbleCloseReason | null;
   scenario: ScenarioId;

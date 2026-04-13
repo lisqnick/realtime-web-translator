@@ -7,25 +7,24 @@ export function buildTranslationPrompt(input: TranslationPromptInput): Translati
     getLanguageConfig(input.sourceLanguage)?.label ?? input.sourceLanguage;
   const targetLanguage =
     getLanguageConfig(input.targetLanguage)?.translationDisplayName ?? input.targetLanguage;
+  const selectedPairLabels = input.selectedLanguagePair.languages
+    .map((language) => getLanguageConfig(language)?.translationDisplayName ?? language)
+    .join(" / ");
   const scenario = getScenarioById(input.scenario);
   const glossaryHints = input.glossaryHints ?? [];
   const isAutoZhJaMode = input.directionMode === "auto_zh_ja";
 
   const instructionLines = isAutoZhJaMode
     ? [
-        "You are a realtime subtitle translator for Simplified Chinese and Japanese.",
-        "You will receive spoken text that is either Simplified Chinese or Japanese.",
-        "Detect whether the source is Simplified Chinese or Japanese, then translate it into the other language.",
-        "Return strict JSON only, with exactly these two fields:",
-        '{"detected_source_language":"zh","translation":"..."}',
-        'or {"detected_source_language":"ja","translation":"..."}',
-        'The field detected_source_language must be either "zh" or "ja".',
-        "If detected_source_language is zh, translation must be natural Japanese.",
-        "If detected_source_language is ja, translation must be natural Simplified Chinese.",
+        `You are a realtime subtitle translator for the selected language pair: ${selectedPairLabels}.`,
+        "You will receive spoken text that belongs to exactly one of the two selected languages.",
+        "Decide which selected language the source belongs to, then translate it into the other selected language.",
+        "Return only the structured result requested by the response schema.",
+        "The translation must always be in the opposite language from the detected source language.",
         "When the target is Chinese, translation must use Simplified Chinese only, never Traditional Chinese.",
         "The output language must always be different from the input language.",
         "Never echo the source text, even if it is very short.",
-        "Do not add any extra keys, markdown, explanations, summaries, notes, or comments.",
+        "Do not add markdown, explanations, summaries, notes, or comments.",
         "Keep the speaker's tone and level of formality.",
         "Be faithful and conservative. Do not embellish, soften, or expand the meaning.",
         "If the source is incomplete, hesitant, or fragmentary, preserve that quality instead of over-completing it.",
@@ -62,7 +61,8 @@ export function buildTranslationPrompt(input: TranslationPromptInput): Translati
 
   const inputSections = isAutoZhJaMode
     ? [
-        "Source language: auto-detect between Simplified Chinese and Japanese",
+        `Selected language pair: ${selectedPairLabels}`,
+        "Source language: detect which of the selected pair the source belongs to",
         "Target language: the other language",
         scenario ? `Scenario: ${scenario.label}` : "Scenario: general",
       ]
@@ -81,7 +81,7 @@ export function buildTranslationPrompt(input: TranslationPromptInput): Translati
   inputSections.push(`Current source segment:\n${input.text.trim()}`);
   inputSections.push(
     isAutoZhJaMode
-      ? 'Return strict JSON only. Example: {"detected_source_language":"zh","translation":"こんにちは"}. Never return the source text unchanged.'
+      ? "Return only the structured output that matches the provided schema. Never return the source text unchanged."
       : `Return only the translation in ${targetLanguage}.`,
   );
 
