@@ -1,6 +1,6 @@
 :root {
-  --background: #edf1e8;
-  --background-strong: #e3eadf;
+  --background: #f8f2ea;
+  --background-strong: #f4ede4;
   --surface: rgba(255, 255, 255, 0.88);
   --surface-strong: #ffffff;
   --foreground: #17221b;
@@ -27,9 +27,12 @@ body {
   min-height: 100%;
   color: var(--foreground);
   background:
-    radial-gradient(circle at top left, rgba(28, 124, 84, 0.1), transparent 28%),
-    radial-gradient(circle at bottom right, rgba(165, 107, 38, 0.09), transparent 24%),
-    linear-gradient(180deg, var(--background) 0%, var(--background-strong) 100%);
+    radial-gradient(circle at 50% 2%, rgba(110, 59, 162, 0.9), transparent 28%),
+    radial-gradient(circle at 54% 18%, rgba(240, 153, 192, 0.72), transparent 36%),
+    radial-gradient(circle at 34% 74%, rgba(246, 197, 205, 0.78), transparent 22%),
+    radial-gradient(circle at 64% 74%, rgba(253, 214, 171, 0.8), transparent 26%),
+    radial-gradient(circle at 50% 52%, rgba(255, 243, 229, 0.95), transparent 45%),
+    linear-gradient(180deg, #f4d8e6 0%, #f8efe6 42%, #f5eee5 68%, #f3ece3 100%);
   font-family:
     var(--font-ui),
     "Hiragino Sans",
