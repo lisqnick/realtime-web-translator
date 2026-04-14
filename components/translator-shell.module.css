@@ -302,11 +302,16 @@
 }
 
 .controlDotDock {
+  --control-dot-size: 108px;
+  --control-dot-core-size: 36px;
   position: fixed;
   top: clamp(280px, 58vh, 420px);
   right: max(
-    calc(env(safe-area-inset-right, 0px) + 18px),
-    calc((100vw - min(540px, calc(100vw - 24px))) / 2 + 18px)
+    calc(env(safe-area-inset-right, 0px) - (var(--control-dot-size) / 3)),
+    calc(
+      (100vw - min(540px, calc(100vw - 24px))) / 2 -
+        (var(--control-dot-size) / 3)
+    )
   );
   transform: translateY(-50%);
   z-index: 12;
@@ -317,8 +322,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 54px;
-  height: 54px;
+  width: var(--control-dot-size);
+  height: var(--control-dot-size);
   padding: 0;
   border: 1px solid var(--dot-ring, rgba(255, 255, 255, 0.4));
   border-radius: 999px;
@@ -333,8 +338,8 @@
 }
 
 .controlDotCore {
-  width: 18px;
-  height: 18px;
+  width: var(--control-dot-core-size);
+  height: var(--control-dot-core-size);
   border-radius: 999px;
   background: var(--dot-fill, currentColor);
   box-shadow: 0 2px 6px rgba(18, 34, 24, 0.12);
@@ -404,17 +409,9 @@
   }
 
   .controlDotDock {
+    --control-dot-size: 100px;
+    --control-dot-core-size: 32px;
     top: clamp(250px, 57vh, 360px);
-    right: calc(env(safe-area-inset-right, 0px) + 16px);
-  }
-
-  .controlDot {
-    width: 50px;
-    height: 50px;
-  }
-
-  .controlDotCore {
-    width: 16px;
-    height: 16px;
+    right: calc(env(safe-area-inset-right, 0px) - (var(--control-dot-size) / 3));
   }
 }
