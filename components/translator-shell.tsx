@@ -27,6 +27,26 @@ const bubbleStatusLabel = {
   closed: "已收起",
 } as const;
 
+const AUTO_SCROLL_BOTTOM_GAP_PX = 108;
+const AUTO_SCROLL_THRESHOLD_PX = 180;
+const PROGRAMMATIC_SCROLL_RELEASE_MS = 140;
+
+function getViewportHeight() {
+  if (typeof window === "undefined") {
+    return 0;
+  }
+
+  return window.visualViewport?.height ?? window.innerHeight;
+}
+
+function getDistanceFromBottom(feedEnd: HTMLDivElement | null) {
+  if (!feedEnd) {
+    return Number.POSITIVE_INFINITY;
+  }
+
+  return feedEnd.getBoundingClientRect().bottom - getViewportHeight();
+}
+
 function formatTimelineTimestamp(timestamp: number) {
   const date = new Date(timestamp);
   const timeLabel = date.toLocaleTimeString("ja-JP", {
@@ -99,7 +119,8 @@ export function TranslatorShell({ runtimeDefaults }: TranslatorShellProps) {
   });
   const feedEndRef = useRef<HTMLDivElement | null>(null);
   const autoScrollEnabledRef = useRef(true);
-  const previousBubbleCountRef = useRef(0);
+  const isProgrammaticScrollRef = useRef(false);
+  const programmaticScrollReleaseTimerRef = useRef<number | null>(null);
 
   const isStarting =
     state.appStatus === "requesting_mic" ||
@@ -148,36 +169,71 @@ export function TranslatorShell({ runtimeDefaults }: TranslatorShellProps) {
   }, [state.bubbles]);
 
   useEffect(() => {
-    const updateAutoScrollState = () => {
-      const viewportBottom = window.innerHeight + window.scrollY;
-      const documentBottom = document.documentElement.scrollHeight;
-      autoScrollEnabledRef.current = documentBottom - viewportBottom <= 180;
+    const clearProgrammaticScrollReleaseTimer = () => {
+      if (programmaticScrollReleaseTimerRef.current !== null) {
+        window.clearTimeout(programmaticScrollReleaseTimerRef.current);
+        programmaticScrollReleaseTimerRef.current = null;
+      }
     };
+
+    const updateAutoScrollState = () => {
+      if (isProgrammaticScrollRef.current) {
+        return;
+      }
+
+      autoScrollEnabledRef.current =
+        getDistanceFromBottom(feedEndRef.current) <= AUTO_SCROLL_THRESHOLD_PX;
+    };
+
+    const visualViewport = window.visualViewport;
 
     updateAutoScrollState();
     window.addEventListener("scroll", updateAutoScrollState, { passive: true });
     window.addEventListener("resize", updateAutoScrollState);
+    visualViewport?.addEventListener("resize", updateAutoScrollState);
+    visualViewport?.addEventListener("scroll", updateAutoScrollState);
 
     return () => {
+      clearProgrammaticScrollReleaseTimer();
       window.removeEventListener("scroll", updateAutoScrollState);
       window.removeEventListener("resize", updateAutoScrollState);
+      visualViewport?.removeEventListener("resize", updateAutoScrollState);
+      visualViewport?.removeEventListener("scroll", updateAutoScrollState);
     };
   }, []);
 
   useEffect(() => {
     if (!autoScrollEnabledRef.current || state.bubbles.length === 0) {
-      previousBubbleCountRef.current = state.bubbles.length;
       return;
     }
 
-    const behavior =
-      state.bubbles.length > previousBubbleCountRef.current ? "smooth" : "auto";
-    previousBubbleCountRef.current = state.bubbles.length;
-
     window.requestAnimationFrame(() => {
-      feedEndRef.current?.scrollIntoView({
-        block: "end",
-        behavior,
+      const feedEnd = feedEndRef.current;
+      if (!feedEnd) {
+        return;
+      }
+
+      const targetScrollY =
+        window.scrollY +
+        feedEnd.getBoundingClientRect().bottom -
+        (getViewportHeight() - AUTO_SCROLL_BOTTOM_GAP_PX);
+
+      if (programmaticScrollReleaseTimerRef.current !== null) {
+        window.clearTimeout(programmaticScrollReleaseTimerRef.current);
+        programmaticScrollReleaseTimerRef.current = null;
+      }
+
+      isProgrammaticScrollRef.current = true;
+      window.scrollTo({
+        top: Math.max(0, targetScrollY),
+        behavior: "auto",
+      });
+
+      window.requestAnimationFrame(() => {
+        programmaticScrollReleaseTimerRef.current = window.setTimeout(() => {
+          isProgrammaticScrollRef.current = false;
+          programmaticScrollReleaseTimerRef.current = null;
+        }, PROGRAMMATIC_SCROLL_RELEASE_MS);
       });
     });
   }, [feedSignature, state.bubbles.length]);

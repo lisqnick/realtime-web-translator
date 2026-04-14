@@ -113,7 +113,7 @@
 .feed {
   display: grid;
   gap: 12px;
-  padding-bottom: 2px;
+  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 108px);
 }
 
 .messageCard {
@@ -198,6 +198,7 @@
 .feedEnd {
   width: 100%;
   height: 1px;
+  scroll-margin-bottom: calc(env(safe-area-inset-bottom, 0px) + 108px);
 }
 
 .debugDetails {
