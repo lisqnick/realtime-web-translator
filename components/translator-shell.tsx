@@ -27,7 +27,7 @@ const bubbleStatusLabel = {
   closed: "已收起",
 } as const;
 
-const AUTO_SCROLL_BOTTOM_GAP_PX = 0;
+const AUTO_SCROLL_BOTTOM_GAP_PX = -9;
 const AUTO_SCROLL_THRESHOLD_PX = 180;
 const PROGRAMMATIC_SCROLL_RELEASE_MS = 140;
 
