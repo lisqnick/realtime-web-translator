@@ -101,6 +101,14 @@ export function mapSupportedLanguageToRealtimeLanguage(
       return "ko";
     case "es-ES":
       return "es";
+    case "fr-FR":
+      return "fr";
+    case "ar-SA":
+      return "ar";
+    case "pt-BR":
+      return "pt";
+    case "de-DE":
+      return "de";
   }
 }
 

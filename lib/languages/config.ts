@@ -48,6 +48,38 @@ export const languageCatalog: LanguageConfig[] = [
     translationDisplayName: "Español",
     enabled: true,
   },
+  {
+    label: "法语",
+    code: "fr-FR",
+    locale: "fr-FR",
+    speechRecognitionHint: "French",
+    translationDisplayName: "Français",
+    enabled: true,
+  },
+  {
+    label: "阿拉伯语",
+    code: "ar-SA",
+    locale: "ar-SA",
+    speechRecognitionHint: "Arabic",
+    translationDisplayName: "العربية",
+    enabled: true,
+  },
+  {
+    label: "葡萄牙语",
+    code: "pt-BR",
+    locale: "pt-BR",
+    speechRecognitionHint: "Portuguese",
+    translationDisplayName: "Português",
+    enabled: true,
+  },
+  {
+    label: "德语",
+    code: "de-DE",
+    locale: "de-DE",
+    speechRecognitionHint: "German",
+    translationDisplayName: "Deutsch",
+    enabled: true,
+  },
 ];
 
 export const FIXED_TRANSLATION_LANGUAGE_CODES = [
@@ -56,6 +88,10 @@ export const FIXED_TRANSLATION_LANGUAGE_CODES = [
   "en-US",
   "ko-KR",
   "es-ES",
+  "fr-FR",
+  "ar-SA",
+  "pt-BR",
+  "de-DE",
 ] as const satisfies readonly SupportedLanguageCode[];
 
 export const AUTO_BIDIRECTIONAL_LANGUAGE_PAIRS = [

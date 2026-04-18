@@ -20,7 +20,16 @@ export type RealtimeConnectionStatus =
   | "connected"
   | "error";
 
-export type RealtimeTranscriptionLanguage = "zh" | "ja" | "en" | "ko" | "es";
+export type RealtimeTranscriptionLanguage =
+  | "zh"
+  | "ja"
+  | "en"
+  | "ko"
+  | "es"
+  | "fr"
+  | "ar"
+  | "pt"
+  | "de";
 export type RealtimeVadMode = "server_vad";
 export type RealtimeNoiseReductionType = "near_field" | "far_field" | "none";
 

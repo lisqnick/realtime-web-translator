@@ -1,7 +1,6 @@
 import "server-only";
 
 import {
-  DEFAULT_UI_DIRECTION_ID,
   isBidirectionalAutoLanguagePairSupported,
   isFixedTranslationLanguageSupported,
   isSupportedLanguageCode,
@@ -117,7 +116,7 @@ function resolveLegacyDirectionId(input: {
     return "zh-ja-auto" as const;
   }
 
-  return resolveUiDirection(input.leftLanguage, input.rightLanguage)?.id ?? DEFAULT_UI_DIRECTION_ID;
+  return resolveUiDirection(input.leftLanguage, input.rightLanguage)?.id ?? null;
 }
 
 const nodeEnv = normalizeNodeEnv(process.env.NODE_ENV);

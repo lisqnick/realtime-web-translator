@@ -3,7 +3,11 @@ export type SupportedLanguageCode =
   | "ja-JP"
   | "en-US"
   | "ko-KR"
-  | "es-ES";
+  | "es-ES"
+  | "fr-FR"
+  | "ar-SA"
+  | "pt-BR"
+  | "de-DE";
 
 export type TranslationDirectionMode = "fixed" | "auto_zh_ja";
 export type TranslationMode = "fixed" | "bidirectional_auto";
@@ -78,7 +82,7 @@ export interface ScenarioConfig {
 }
 
 export interface PublicRuntimeDefaults {
-  defaultDirectionId: UiLanguageDirectionId;
+  defaultDirectionId: UiLanguageDirectionId | null;
   defaultLeftLanguage: SupportedLanguageCode;
   defaultRightLanguage: SupportedLanguageCode;
   defaultTranslationMode: TranslationMode;

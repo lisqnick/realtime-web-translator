@@ -472,7 +472,7 @@ export function TranslatorShell({ runtimeDefaults }: TranslatorShellProps) {
               </div>
               <div className={styles.sourceBlock}>
                 <p className={styles.blockLabel}>原文</p>
-                <p className={styles.sourceText}>
+                <p className={styles.sourceText} dir="auto">
                   {bubble.mergedSourceText || "正在等待这张卡里的原文内容..."}
                 </p>
               </div>
@@ -487,7 +487,7 @@ export function TranslatorShell({ runtimeDefaults }: TranslatorShellProps) {
                         : `${bubbleStatusLabel[bubble.status]} · ${bubble.chunkCount} 段`}
                   </span>
                 </div>
-                <p className={styles.translationText}>
+                <p className={styles.translationText} dir="auto">
                   {bubble.mergedTranslationText ||
                     "…"}
                 </p>
