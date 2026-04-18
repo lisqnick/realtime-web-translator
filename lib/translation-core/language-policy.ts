@@ -7,6 +7,7 @@ import { resolveTranslationDirection } from "@/lib/translation-core/direction-re
 const JAPANESE_KANA_REGEX = /[\u3040-\u30ff\u31f0-\u31ff]/u;
 const HAN_CHARACTERS_REGEX = /[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]/u;
 const LATIN_LETTERS_REGEX = /[A-Za-z]/u;
+const LONG_LATIN_WORD_REGEX = /[A-Za-z]{4,}/u;
 const NON_LATIN_TEXT_REGEX = /[\u3040-\u30ff\u31f0-\u31ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\u0600-\u06ff]/u;
 
 export function isBidirectionalAutoPairSupported(selectedLanguagePair: SelectedLanguagePair) {
@@ -153,12 +154,38 @@ function containsLatinLetters(text: string) {
   return LATIN_LETTERS_REGEX.test(text);
 }
 
+function containsLongLatinWord(text: string) {
+  return LONG_LATIN_WORD_REGEX.test(text);
+}
+
 function isLikelyJapaneseTranslation(text: string) {
-  return containsJapaneseKana(text);
+  if (containsJapaneseKana(text)) {
+    return true;
+  }
+
+  if (containsHanCharacters(text) && !containsLongLatinWord(text)) {
+    return true;
+  }
+
+  return false;
 }
 
 function isLikelySimplifiedChineseTranslation(text: string) {
-  return !containsJapaneseKana(text) && containsHanCharacters(text);
+  const trimmed = text.trim();
+
+  if (!trimmed) {
+    return false;
+  }
+
+  if (containsJapaneseKana(trimmed)) {
+    return false;
+  }
+
+  if (containsHanCharacters(trimmed)) {
+    return true;
+  }
+
+  return trimmed.length <= 6;
 }
 
 function isLikelyEnglishTranslation(text: string) {
