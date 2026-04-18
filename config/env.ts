@@ -11,6 +11,7 @@ import type {
   NodeEnv,
   PublicRuntimeDefaults,
   SupportedLanguageCode,
+  TranslationMode,
 } from "@/types/config";
 
 const LOCAL_APP_BASE_URL = "http://localhost:3000";
@@ -52,21 +53,72 @@ function normalizeNodeEnv(value: string | undefined): NodeEnv {
   return "development";
 }
 
+function normalizeTranslationMode(value: string | undefined): TranslationMode {
+  if (value === "fixed") {
+    return "fixed";
+  }
+
+  return "bidirectional_auto";
+}
+
+function normalizeRuntimeLanguage(
+  value: string | undefined,
+  fallback: SupportedLanguageCode,
+) {
+  return isSupportedLanguageCode(value) ? value : fallback;
+}
+
+function normalizeRuntimeLanguageDefaults(input: {
+  leftLanguage: SupportedLanguageCode;
+  rightLanguage: SupportedLanguageCode;
+}) {
+  if (input.leftLanguage !== input.rightLanguage) {
+    return input;
+  }
+
+  return {
+    leftLanguage: "zh-CN" as const,
+    rightLanguage: "ja-JP" as const,
+  };
+}
+
+function resolveLegacyDirectionId(input: {
+  leftLanguage: SupportedLanguageCode;
+  rightLanguage: SupportedLanguageCode;
+  translationMode: TranslationMode;
+}) {
+  if (
+    input.translationMode === "bidirectional_auto" &&
+    ((input.leftLanguage === "zh-CN" && input.rightLanguage === "ja-JP") ||
+      (input.leftLanguage === "ja-JP" && input.rightLanguage === "zh-CN"))
+  ) {
+    return "zh-ja-auto" as const;
+  }
+
+  return (
+    resolveUiDirection(input.leftLanguage, input.rightLanguage)?.id ??
+    getUiDirectionById(DEFAULT_UI_DIRECTION_ID)!.id
+  );
+}
+
 const nodeEnv = normalizeNodeEnv(process.env.NODE_ENV);
-const sourceLanguage = isSupportedLanguageCode(process.env.DEFAULT_SOURCE_LANGUAGE)
-  ? process.env.DEFAULT_SOURCE_LANGUAGE
-  : "zh-CN";
-const targetLanguage = isSupportedLanguageCode(process.env.DEFAULT_TARGET_LANGUAGE)
-  ? process.env.DEFAULT_TARGET_LANGUAGE
-  : "ja-JP";
-const resolvedDirection =
-  resolveUiDirection(sourceLanguage, targetLanguage) ??
-  getUiDirectionById(DEFAULT_UI_DIRECTION_ID)!;
 const defaultScenarioId = isScenarioId(process.env.DEFAULT_SCENARIO)
   ? process.env.DEFAULT_SCENARIO
   : DEFAULT_SCENARIO_ID;
-const defaultLeftLanguage: SupportedLanguageCode = "zh-CN";
-const defaultRightLanguage: SupportedLanguageCode = "ja-JP";
+const defaultTranslationMode = normalizeTranslationMode(
+  process.env.DEFAULT_TRANSLATION_MODE,
+);
+const normalizedRuntimeLanguages = normalizeRuntimeLanguageDefaults({
+  leftLanguage: normalizeRuntimeLanguage(process.env.DEFAULT_LEFT_LANGUAGE, "zh-CN"),
+  rightLanguage: normalizeRuntimeLanguage(process.env.DEFAULT_RIGHT_LANGUAGE, "ja-JP"),
+});
+const defaultLeftLanguage = normalizedRuntimeLanguages.leftLanguage;
+const defaultRightLanguage = normalizedRuntimeLanguages.rightLanguage;
+const compatibilityDirectionId = resolveLegacyDirectionId({
+  leftLanguage: defaultLeftLanguage,
+  rightLanguage: defaultRightLanguage,
+  translationMode: defaultTranslationMode,
+});
 
 export const serverEnv = {
   openAiApiKey: readString(process.env.OPENAI_API_KEY, ""),
@@ -81,8 +133,8 @@ export const serverEnv = {
   appBaseUrl: readString(process.env.APP_BASE_URL, LOCAL_APP_BASE_URL),
   nodeEnv,
   defaults: {
-    sourceLanguage: resolvedDirection.sourceLanguage,
-    targetLanguage: resolvedDirection.targetLanguage,
+    sourceLanguage: defaultLeftLanguage,
+    targetLanguage: defaultRightLanguage,
     scenario: defaultScenarioId,
     glossaryEnabled: parseBoolean(process.env.GLOSSARY_ENABLED, true),
     debugPerfLogs: parseBoolean(process.env.DEBUG_PERF_LOGS, nodeEnv === "development"),
@@ -90,10 +142,10 @@ export const serverEnv = {
 };
 
 export const publicRuntimeDefaults: PublicRuntimeDefaults = {
-  defaultDirectionId: resolvedDirection.id,
+  defaultDirectionId: compatibilityDirectionId,
   defaultLeftLanguage,
   defaultRightLanguage,
-  defaultTranslationMode: "bidirectional_auto",
+  defaultTranslationMode,
   defaultScenarioId,
   appBaseUrl: serverEnv.appBaseUrl,
   glossaryEnabled: serverEnv.defaults.glossaryEnabled,
