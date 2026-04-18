@@ -46,8 +46,20 @@
   font-size: 0.76rem;
 }
 
-.languageChip strong {
+.languageChip strong,
+.languageChip select {
   font-size: 0.96rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.languageChip select {
+  width: 100%;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--foreground);
+  appearance: none;
 }
 
 .swapButton {
@@ -66,8 +78,9 @@
 }
 
 .headerMetaCompact {
-  display: flex;
-  justify-content: flex-start;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
 }
 
 .scenarioField {
@@ -396,6 +409,10 @@
   }
 
   .languageChip strong {
+    font-size: 0.92rem;
+  }
+
+  .languageChip select {
     font-size: 0.92rem;
   }
 

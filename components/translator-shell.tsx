@@ -4,15 +4,17 @@ import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "reac
 
 import { getRelativePerfDurations } from "@/lib/perf/transcript-metrics";
 import {
-  getNextUiDirectionId,
-  getUiDirectionById,
+  AUTO_BIDIRECTIONAL_LANGUAGE_CODES,
+  getEnabledLanguageConfigs,
+  getLanguageConfig,
 } from "@/lib/languages/config";
 import { useRealtimeController } from "@/lib/realtime/use-realtime-controller";
 import { getScenarioById, scenarioCatalog } from "@/lib/scenarios/config";
 import type {
   PublicRuntimeDefaults,
   ScenarioId,
-  UiLanguageDirectionId,
+  SupportedLanguageCode,
+  TranslationMode,
 } from "@/types/config";
 
 import styles from "./translator-shell.module.css";
@@ -80,9 +82,69 @@ function getControlDotState(appStatus: string) {
   return "success" as const;
 }
 
+function ensureDistinctLanguagePair(
+  nextLeftLanguage: SupportedLanguageCode,
+  nextRightLanguage: SupportedLanguageCode,
+  allowedLanguages: readonly SupportedLanguageCode[],
+  preferredSide: "left" | "right",
+) {
+  if (nextLeftLanguage !== nextRightLanguage) {
+    return {
+      leftLanguage: nextLeftLanguage,
+      rightLanguage: nextRightLanguage,
+    };
+  }
+
+  const fallbackLanguage =
+    allowedLanguages.find((language) =>
+      preferredSide === "left" ? language !== nextLeftLanguage : language !== nextRightLanguage,
+    ) ?? allowedLanguages[0];
+
+  if (preferredSide === "left") {
+    return {
+      leftLanguage: nextLeftLanguage,
+      rightLanguage: fallbackLanguage,
+    };
+  }
+
+  return {
+    leftLanguage: fallbackLanguage,
+    rightLanguage: nextRightLanguage,
+  };
+}
+
+function normalizeLanguagePairForAvailableLanguages(
+  nextLeftLanguage: SupportedLanguageCode,
+  nextRightLanguage: SupportedLanguageCode,
+  allowedLanguages: readonly SupportedLanguageCode[],
+) {
+  const fallbackLeftLanguage = allowedLanguages[0] ?? nextLeftLanguage;
+  const leftCandidate = allowedLanguages.includes(nextLeftLanguage)
+    ? nextLeftLanguage
+    : fallbackLeftLanguage;
+  const rightFallback =
+    allowedLanguages.find((language) => language !== leftCandidate) ?? leftCandidate;
+  const rightCandidate = allowedLanguages.includes(nextRightLanguage)
+    ? nextRightLanguage
+    : rightFallback;
+
+  return ensureDistinctLanguagePair(
+    leftCandidate,
+    rightCandidate,
+    allowedLanguages,
+    "right",
+  );
+}
+
 export function TranslatorShell({ runtimeDefaults }: TranslatorShellProps) {
-  const [directionId, setDirectionId] = useState<UiLanguageDirectionId>(
-    runtimeDefaults.defaultDirectionId,
+  const [translationMode, setTranslationMode] = useState<TranslationMode>(
+    "bidirectional_auto",
+  );
+  const [leftLanguage, setLeftLanguage] = useState<SupportedLanguageCode>(
+    AUTO_BIDIRECTIONAL_LANGUAGE_CODES[0],
+  );
+  const [rightLanguage, setRightLanguage] = useState<SupportedLanguageCode>(
+    AUTO_BIDIRECTIONAL_LANGUAGE_CODES[1],
   );
   const [scenarioId, setScenarioId] = useState<ScenarioId>(
     runtimeDefaults.defaultScenarioId,
@@ -108,12 +170,20 @@ export function TranslatorShell({ runtimeDefaults }: TranslatorShellProps) {
     () => "loading",
   );
 
-  const currentDirection = getUiDirectionById(directionId)!;
+  const isBidirectionalAuto = translationMode === "bidirectional_auto";
+  const availableLanguages = useMemo(
+    () =>
+      getEnabledLanguageConfigs(translationMode).map((language) => language.code),
+    [translationMode],
+  );
+  const controllerDirectionMode = isBidirectionalAuto ? "auto_zh_ja" : "fixed";
+  const leftCardLabel = isBidirectionalAuto ? "语言 1" : "源语言";
+  const rightCardLabel = isBidirectionalAuto ? "语言 2" : "目标语言";
   const showDebugPanel = runtimeDefaults.nodeEnv === "development";
   const { state, start, stop } = useRealtimeController({
-    directionMode: currentDirection.mode,
-    sourceLanguage: currentDirection.sourceLanguage,
-    targetLanguage: currentDirection.targetLanguage,
+    directionMode: controllerDirectionMode,
+    sourceLanguage: leftLanguage,
+    targetLanguage: rightLanguage,
     scenario: scenarioId,
     debugPerfLogs: runtimeDefaults.debugPerfLogs,
   });
@@ -245,24 +315,69 @@ export function TranslatorShell({ runtimeDefaults }: TranslatorShellProps) {
         <header className={styles.header}>
           <div className={styles.languageBar}>
             <div className={styles.languageChip}>
-              <span>源语言</span>
-              <strong>{currentDirection.sourceLabel}</strong>
+              <span>{leftCardLabel}</span>
+              <select
+                value={leftLanguage}
+                disabled={controlsLocked}
+                onChange={(event) => {
+                  const nextPair = ensureDistinctLanguagePair(
+                    event.target.value as SupportedLanguageCode,
+                    rightLanguage,
+                    availableLanguages,
+                    "left",
+                  );
+                  setLeftLanguage(nextPair.leftLanguage);
+                  setRightLanguage(nextPair.rightLanguage);
+                }}
+              >
+                {availableLanguages.map((languageCode) => {
+                  const language = getLanguageConfig(languageCode)!;
+                  return (
+                    <option key={language.code} value={language.code}>
+                      {language.label}
+                    </option>
+                  );
+                })}
+              </select>
             </div>
             <button
               type="button"
               className={styles.swapButton}
               disabled={controlsLocked}
-              onClick={() =>
-                setDirectionId((currentValue) => getNextUiDirectionId(currentValue))
-              }
-              aria-label="切换翻译方向模式"
-              title="切换翻译方向模式"
+              onClick={() => {
+                setLeftLanguage(rightLanguage);
+                setRightLanguage(leftLanguage);
+              }}
+              aria-label="交换左右语言"
+              title="交换左右语言"
             >
               ⇄
             </button>
             <div className={styles.languageChip}>
-              <span>目标语言</span>
-              <strong>{currentDirection.targetLabel}</strong>
+              <span>{rightCardLabel}</span>
+              <select
+                value={rightLanguage}
+                disabled={controlsLocked}
+                onChange={(event) => {
+                  const nextPair = ensureDistinctLanguagePair(
+                    leftLanguage,
+                    event.target.value as SupportedLanguageCode,
+                    availableLanguages,
+                    "right",
+                  );
+                  setLeftLanguage(nextPair.leftLanguage);
+                  setRightLanguage(nextPair.rightLanguage);
+                }}
+              >
+                {availableLanguages.map((languageCode) => {
+                  const language = getLanguageConfig(languageCode)!;
+                  return (
+                    <option key={language.code} value={language.code}>
+                      {language.label}
+                    </option>
+                  );
+                })}
+              </select>
             </div>
           </div>
 
@@ -279,6 +394,31 @@ export function TranslatorShell({ runtimeDefaults }: TranslatorShellProps) {
                     {scenario.label}
                   </option>
                 ))}
+              </select>
+            </label>
+            <label className={styles.scenarioField}>
+              <span>翻译模式</span>
+              <select
+                value={translationMode}
+                disabled={controlsLocked}
+                onChange={(event) => {
+                  const nextMode = event.target.value as TranslationMode;
+                  const nextAvailableLanguages = getEnabledLanguageConfigs(nextMode).map(
+                    (language) => language.code,
+                  );
+                  const normalizedPair = normalizeLanguagePairForAvailableLanguages(
+                    leftLanguage,
+                    rightLanguage,
+                    nextAvailableLanguages,
+                  );
+
+                  setTranslationMode(nextMode);
+                  setLeftLanguage(normalizedPair.leftLanguage);
+                  setRightLanguage(normalizedPair.rightLanguage);
+                }}
+              >
+                <option value="bidirectional_auto">自动互译</option>
+                <option value="fixed">单向翻译</option>
               </select>
             </label>
           </div>

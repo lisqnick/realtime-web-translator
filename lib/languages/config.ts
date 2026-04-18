@@ -2,6 +2,7 @@ import type {
   LanguageConfig,
   SupportedLanguageCode,
   TranslationDirectionMode,
+  TranslationMode,
   UiLanguageDirection,
   UiLanguageDirectionId,
 } from "@/types/config";
@@ -75,6 +76,10 @@ export const uiLanguageDirections: UiLanguageDirection[] = [
 ];
 
 export const DEFAULT_UI_DIRECTION_ID: UiLanguageDirectionId = "zh-CN__ja-JP";
+export const AUTO_BIDIRECTIONAL_LANGUAGE_CODES: readonly SupportedLanguageCode[] = [
+  "zh-CN",
+  "ja-JP",
+];
 
 const languageIndex = new Map(languageCatalog.map((language) => [language.code, language]));
 const directionIndex = new Map(uiLanguageDirections.map((direction) => [direction.id, direction]));
@@ -93,6 +98,18 @@ export function isSupportedLanguageCode(
 
 export function getLanguageConfig(code: SupportedLanguageCode) {
   return languageIndex.get(code);
+}
+
+export function getEnabledLanguageConfigs(mode?: TranslationMode) {
+  const enabledLanguages = languageCatalog.filter((language) => language.enabled);
+
+  if (mode !== "bidirectional_auto") {
+    return enabledLanguages;
+  }
+
+  return enabledLanguages.filter((language) =>
+    AUTO_BIDIRECTIONAL_LANGUAGE_CODES.includes(language.code),
+  );
 }
 
 export function getUiDirectionById(id: UiLanguageDirectionId) {
