@@ -159,11 +159,21 @@ function containsLongLatinWord(text: string) {
 }
 
 function isLikelyJapaneseTranslation(text: string) {
-  if (containsJapaneseKana(text)) {
+  const trimmed = text.trim();
+
+  if (!trimmed) {
+    return false;
+  }
+
+  if (containsJapaneseKana(trimmed)) {
     return true;
   }
 
-  if (containsHanCharacters(text) && !containsLongLatinWord(text)) {
+  if (
+    containsHanCharacters(trimmed) &&
+    !containsLongLatinWord(trimmed) &&
+    trimmed.length <= 6
+  ) {
     return true;
   }
 
@@ -185,7 +195,7 @@ function isLikelySimplifiedChineseTranslation(text: string) {
     return true;
   }
 
-  return trimmed.length <= 6;
+  return containsLatinLetters(trimmed) && trimmed.length <= 6;
 }
 
 function isLikelyEnglishTranslation(text: string) {
