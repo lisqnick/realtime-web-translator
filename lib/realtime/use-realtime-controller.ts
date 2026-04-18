@@ -1208,7 +1208,7 @@ export function useRealtimeController(options: {
 
       const realtimeSession = await requestRealtimeSession({
         sourceLanguage:
-          options.directionMode === "auto_zh_ja" ? undefined : options.sourceLanguage,
+          options.directionMode === "auto_selected_pair" ? undefined : options.sourceLanguage,
         signal: abortController.signal,
       });
 

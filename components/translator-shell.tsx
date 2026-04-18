@@ -175,7 +175,7 @@ export function TranslatorShell({ runtimeDefaults }: TranslatorShellProps) {
       getEnabledLanguageConfigs(translationMode).map((language) => language.code),
     [translationMode],
   );
-  const controllerDirectionMode = isBidirectionalAuto ? "auto_zh_ja" : "fixed";
+  const controllerDirectionMode = isBidirectionalAuto ? "auto_selected_pair" : "fixed";
   const leftCardLabel = isBidirectionalAuto ? "语言 1" : "源语言";
   const rightCardLabel = isBidirectionalAuto ? "语言 2" : "目标语言";
   const showDebugPanel = runtimeDefaults.nodeEnv === "development";

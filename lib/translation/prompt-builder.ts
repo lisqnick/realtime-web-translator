@@ -12,9 +12,9 @@ export function buildTranslationPrompt(input: TranslationPromptInput): Translati
     .join(" / ");
   const scenario = getScenarioById(input.scenario);
   const glossaryHints = input.glossaryHints ?? [];
-  const isAutoZhJaMode = input.directionMode === "auto_zh_ja";
+  const isAutoSelectedPairMode = input.directionMode === "auto_selected_pair";
 
-  const instructionLines = isAutoZhJaMode
+  const instructionLines = isAutoSelectedPairMode
     ? [
         `You are a realtime subtitle translator for the selected language pair: ${selectedPairLabels}.`,
         "You will receive spoken text that belongs to exactly one of the two selected languages.",
@@ -59,7 +59,7 @@ export function buildTranslationPrompt(input: TranslationPromptInput): Translati
     );
   }
 
-  const inputSections = isAutoZhJaMode
+  const inputSections = isAutoSelectedPairMode
     ? [
         `Selected language pair: ${selectedPairLabels}`,
         "Source language: detect which of the selected pair the source belongs to",
@@ -80,7 +80,7 @@ export function buildTranslationPrompt(input: TranslationPromptInput): Translati
 
   inputSections.push(`Current source segment:\n${input.text.trim()}`);
   inputSections.push(
-    isAutoZhJaMode
+    isAutoSelectedPairMode
       ? "Return only the structured output that matches the provided schema. Never return the source text unchanged."
       : `Return only the translation in ${targetLanguage}.`,
   );

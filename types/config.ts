@@ -9,7 +9,7 @@ export type SupportedLanguageCode =
   | "pt-BR"
   | "de-DE";
 
-export type TranslationDirectionMode = "fixed" | "auto_zh_ja";
+export type TranslationDirectionMode = "fixed" | "auto_selected_pair";
 export type TranslationMode = "fixed" | "bidirectional_auto";
 
 export type ScenarioId =

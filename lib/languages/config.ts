@@ -93,6 +93,8 @@ export const FIXED_TRANSLATION_LANGUAGE_CODES = [
 
 export const AUTO_BIDIRECTIONAL_LANGUAGE_PAIRS = [
   ["zh-CN", "ja-JP"],
+  ["zh-CN", "en-US"],
+  ["ja-JP", "en-US"],
 ] as const satisfies readonly [SupportedLanguageCode, SupportedLanguageCode][];
 
 export const AUTO_BIDIRECTIONAL_LANGUAGE_CODES = Array.from(

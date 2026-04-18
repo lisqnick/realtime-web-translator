@@ -12,9 +12,9 @@ export function createSelectedLanguagePair(input: {
   sourceLanguage: SupportedLanguageCode;
   targetLanguage: SupportedLanguageCode;
 }): SelectedLanguagePair {
-  if (input.directionMode === "auto_zh_ja") {
+  if (input.directionMode === "auto_selected_pair") {
     return {
-      languages: ["zh-CN", "ja-JP"],
+      languages: [input.sourceLanguage, input.targetLanguage],
       mode: "bidirectional_auto",
     };
   }
