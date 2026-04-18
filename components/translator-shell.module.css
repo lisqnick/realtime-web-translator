@@ -196,6 +196,24 @@
   color: var(--foreground);
   word-break: break-word;
   white-space: pre-wrap;
+  font-family:
+    Inter,
+    "SF Pro Text",
+    "SF Pro Display",
+    "Segoe UI",
+    Roboto,
+    "Helvetica Neue",
+    Arial,
+    "PingFang SC",
+    "Hiragino Sans",
+    "Hiragino Kaku Gothic ProN",
+    "Noto Sans CJK SC",
+    "Noto Sans CJK JP",
+    "Microsoft YaHei",
+    "Yu Gothic",
+    "Noto Naskh Arabic",
+    sans-serif;
+  letter-spacing: 0.01em;
 }
 
 .translationText {
