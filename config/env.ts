@@ -7,7 +7,11 @@ import {
   resolveUiDirection,
 } from "@/lib/languages/config";
 import { DEFAULT_SCENARIO_ID, isScenarioId } from "@/lib/scenarios/config";
-import type { NodeEnv, PublicRuntimeDefaults } from "@/types/config";
+import type {
+  NodeEnv,
+  PublicRuntimeDefaults,
+  SupportedLanguageCode,
+} from "@/types/config";
 
 const LOCAL_APP_BASE_URL = "http://localhost:3000";
 const DEFAULT_REALTIME_TRANSCRIPTION_MODEL = "gpt-4o-mini-transcribe";
@@ -61,6 +65,8 @@ const resolvedDirection =
 const defaultScenarioId = isScenarioId(process.env.DEFAULT_SCENARIO)
   ? process.env.DEFAULT_SCENARIO
   : DEFAULT_SCENARIO_ID;
+const defaultLeftLanguage: SupportedLanguageCode = "zh-CN";
+const defaultRightLanguage: SupportedLanguageCode = "ja-JP";
 
 export const serverEnv = {
   openAiApiKey: readString(process.env.OPENAI_API_KEY, ""),
@@ -85,6 +91,9 @@ export const serverEnv = {
 
 export const publicRuntimeDefaults: PublicRuntimeDefaults = {
   defaultDirectionId: resolvedDirection.id,
+  defaultLeftLanguage,
+  defaultRightLanguage,
+  defaultTranslationMode: "bidirectional_auto",
   defaultScenarioId,
   appBaseUrl: serverEnv.appBaseUrl,
   glossaryEnabled: serverEnv.defaults.glossaryEnabled,

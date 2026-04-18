@@ -4,7 +4,6 @@ import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "reac
 
 import { getRelativePerfDurations } from "@/lib/perf/transcript-metrics";
 import {
-  AUTO_BIDIRECTIONAL_LANGUAGE_CODES,
   getEnabledLanguageConfigs,
   getLanguageConfig,
 } from "@/lib/languages/config";
@@ -138,13 +137,13 @@ function normalizeLanguagePairForAvailableLanguages(
 
 export function TranslatorShell({ runtimeDefaults }: TranslatorShellProps) {
   const [translationMode, setTranslationMode] = useState<TranslationMode>(
-    "bidirectional_auto",
+    runtimeDefaults.defaultTranslationMode,
   );
   const [leftLanguage, setLeftLanguage] = useState<SupportedLanguageCode>(
-    AUTO_BIDIRECTIONAL_LANGUAGE_CODES[0],
+    runtimeDefaults.defaultLeftLanguage,
   );
   const [rightLanguage, setRightLanguage] = useState<SupportedLanguageCode>(
-    AUTO_BIDIRECTIONAL_LANGUAGE_CODES[1],
+    runtimeDefaults.defaultRightLanguage,
   );
   const [scenarioId, setScenarioId] = useState<ScenarioId>(
     runtimeDefaults.defaultScenarioId,

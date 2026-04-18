@@ -74,6 +74,9 @@ export interface ScenarioConfig {
 
 export interface PublicRuntimeDefaults {
   defaultDirectionId: UiLanguageDirectionId;
+  defaultLeftLanguage: SupportedLanguageCode;
+  defaultRightLanguage: SupportedLanguageCode;
+  defaultTranslationMode: TranslationMode;
   defaultScenarioId: ScenarioId;
   appBaseUrl: string;
   glossaryEnabled: boolean;
