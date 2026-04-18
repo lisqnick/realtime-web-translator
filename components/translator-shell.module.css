@@ -20,8 +20,10 @@
   padding: 12px 14px 10px;
   border: 1px solid var(--border);
   border-radius: 22px;
-  background: rgba(255, 255, 255, 0.92);
-  box-shadow: var(--shadow);
+  background: linear-gradient(180deg, rgba(13, 20, 33, 0.9), rgba(10, 16, 28, 0.94));
+  box-shadow:
+    0 18px 40px rgba(0, 0, 0, 0.28),
+    0 0 0 1px rgba(145, 211, 255, 0.04);
 }
 
 .languageBar {
@@ -38,7 +40,7 @@
   padding: 10px 12px;
   border: 1px solid var(--border);
   border-radius: 18px;
-  background: var(--surface-strong);
+  background: rgba(14, 22, 36, 0.92);
 }
 
 .languageChip span {
@@ -67,9 +69,10 @@
   height: 40px;
   border: 1px solid var(--border);
   border-radius: 999px;
-  background: rgba(23, 34, 27, 0.04);
+  background: rgba(17, 28, 44, 0.88);
   color: var(--foreground);
   font-size: 1rem;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
 .swapButton:disabled {
@@ -100,7 +103,7 @@
   padding: 0 10px;
   border: 1px solid var(--border);
   border-radius: 14px;
-  background: var(--surface-strong);
+  background: rgba(14, 22, 36, 0.92);
   color: var(--foreground);
 }
 
@@ -113,9 +116,9 @@
   display: grid;
   gap: 6px;
   padding: 14px 16px;
-  border: 1px solid rgba(155, 64, 50, 0.2);
+  border: 1px solid rgba(239, 124, 134, 0.22);
   border-radius: 18px;
-  background: rgba(155, 64, 50, 0.08);
+  background: rgba(72, 22, 28, 0.5);
 }
 
 .errorBanner p {
@@ -135,15 +138,17 @@
   padding: 16px;
   border: 1px solid var(--border);
   border-radius: 24px;
-  background: rgba(255, 255, 255, 0.9);
-  box-shadow: var(--shadow);
+  background: linear-gradient(180deg, rgba(12, 18, 29, 0.9), rgba(9, 15, 25, 0.95));
+  box-shadow:
+    0 18px 42px rgba(0, 0, 0, 0.3),
+    0 0 0 1px rgba(146, 214, 255, 0.04);
 }
 
 .liveMessageCard {
-  border-color: rgba(28, 124, 84, 0.2);
+  border-color: rgba(84, 184, 255, 0.22);
   background:
-    linear-gradient(180deg, rgba(28, 124, 84, 0.06), rgba(255, 255, 255, 0.94)),
-    var(--surface-strong);
+    radial-gradient(circle at top right, rgba(79, 199, 255, 0.12), transparent 34%),
+    linear-gradient(180deg, rgba(13, 21, 34, 0.94), rgba(9, 15, 25, 0.96));
 }
 
 .cardMeta {
@@ -162,12 +167,14 @@
   gap: 8px;
   padding: 12px 14px;
   border-radius: 18px;
-  background: rgba(237, 241, 232, 0.72);
+  background: rgba(13, 22, 35, 0.86);
+  border: 1px solid rgba(220, 232, 255, 0.07);
 }
 
 .translationBlock {
-  background: rgba(255, 255, 255, 0.88);
-  border: 1px solid rgba(23, 34, 27, 0.08);
+  background: rgba(17, 28, 44, 0.92);
+  border: 1px solid rgba(160, 219, 255, 0.12);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
 }
 
 .blockHeader {
@@ -193,7 +200,7 @@
 .translationText {
   font-size: 1.02rem;
   line-height: 1.85;
-  color: var(--foreground);
+  color: rgba(241, 247, 255, 0.9);
   word-break: break-word;
   white-space: pre-wrap;
   font-family:
@@ -217,7 +224,7 @@
 }
 
 .translationText {
-  color: rgba(23, 34, 27, 0.9);
+  color: rgba(249, 252, 255, 0.96);
 }
 
 .inlineError {
@@ -234,7 +241,7 @@
 .debugDetails {
   border: 1px solid var(--border);
   border-radius: 20px;
-  background: rgba(255, 255, 255, 0.78);
+  background: rgba(10, 17, 28, 0.84);
   overflow: hidden;
 }
 
@@ -310,7 +317,7 @@
   padding: 10px 12px;
   border: 1px dashed var(--border);
   border-radius: 14px;
-  background: rgba(244, 246, 241, 0.86);
+  background: rgba(13, 21, 33, 0.84);
   color: var(--foreground);
   font-size: 0.8rem;
 }
@@ -359,7 +366,9 @@
   border: 1px solid var(--dot-ring, rgba(255, 255, 255, 0.4));
   border-radius: 999px;
   background: transparent;
-  box-shadow: 0 8px 18px rgba(18, 34, 24, 0.08);
+  box-shadow:
+    0 10px 22px rgba(0, 0, 0, 0.3),
+    0 0 0 1px rgba(150, 220, 255, 0.04);
   pointer-events: auto;
   transition:
     color 160ms ease,
@@ -387,31 +396,31 @@
     );
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.38),
-    0 4px 10px rgba(18, 34, 24, 0.14);
+    0 6px 14px rgba(0, 0, 0, 0.28);
 }
 
 .controlDot--success {
-  --dot-tint-soft: rgba(234, 245, 223, 0.92);
-  --dot-tint-main: rgba(117, 183, 128, 0.94);
-  --dot-tint-deep: rgba(86, 154, 100, 0.98);
-  --dot-ring: rgba(62, 146, 92, 0.26);
-  color: rgba(62, 146, 92, 0.92);
+  --dot-tint-soft: rgba(210, 250, 222, 0.86);
+  --dot-tint-main: rgba(82, 176, 122, 0.9);
+  --dot-tint-deep: rgba(55, 124, 82, 0.96);
+  --dot-ring: rgba(83, 176, 123, 0.3);
+  color: rgba(98, 196, 139, 0.94);
 }
 
 .controlDot--info {
-  --dot-tint-soft: rgba(225, 236, 252, 0.94);
-  --dot-tint-main: rgba(116, 149, 214, 0.94);
-  --dot-tint-deep: rgba(85, 120, 193, 0.98);
-  --dot-ring: rgba(74, 123, 196, 0.26);
-  color: rgba(74, 123, 196, 0.92);
+  --dot-tint-soft: rgba(220, 244, 255, 0.92);
+  --dot-tint-main: rgba(90, 174, 233, 0.92);
+  --dot-tint-deep: rgba(39, 107, 182, 0.98);
+  --dot-ring: rgba(83, 180, 255, 0.3);
+  color: rgba(97, 191, 255, 0.96);
 }
 
 .controlDot--danger {
-  --dot-tint-soft: rgba(251, 225, 221, 0.94);
-  --dot-tint-main: rgba(221, 132, 122, 0.95);
-  --dot-tint-deep: rgba(190, 92, 92, 0.98);
-  --dot-ring: rgba(186, 76, 76, 0.26);
-  color: rgba(186, 76, 76, 0.92);
+  --dot-tint-soft: rgba(255, 224, 228, 0.9);
+  --dot-tint-main: rgba(224, 109, 125, 0.92);
+  --dot-tint-deep: rgba(158, 52, 76, 0.98);
+  --dot-ring: rgba(241, 118, 136, 0.28);
+  color: rgba(245, 126, 144, 0.95);
 }
 
 .controlDot--disabled {
