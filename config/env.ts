@@ -2,7 +2,8 @@ import "server-only";
 
 import {
   DEFAULT_UI_DIRECTION_ID,
-  getUiDirectionById,
+  isBidirectionalAutoLanguagePairSupported,
+  isFixedTranslationLanguageSupported,
   isSupportedLanguageCode,
   resolveUiDirection,
 } from "@/lib/languages/config";
@@ -71,8 +72,30 @@ function normalizeRuntimeLanguage(
 function normalizeRuntimeLanguageDefaults(input: {
   leftLanguage: SupportedLanguageCode;
   rightLanguage: SupportedLanguageCode;
+  translationMode: TranslationMode;
 }) {
-  if (input.leftLanguage !== input.rightLanguage) {
+  if (input.leftLanguage === input.rightLanguage) {
+    return {
+      leftLanguage: "zh-CN" as const,
+      rightLanguage: "ja-JP" as const,
+    };
+  }
+
+  if (input.translationMode === "fixed") {
+    if (
+      isFixedTranslationLanguageSupported(input.leftLanguage) &&
+      isFixedTranslationLanguageSupported(input.rightLanguage)
+    ) {
+      return input;
+    }
+
+    return {
+      leftLanguage: "zh-CN" as const,
+      rightLanguage: "ja-JP" as const,
+    };
+  }
+
+  if (isBidirectionalAutoLanguagePairSupported(input.leftLanguage, input.rightLanguage)) {
     return input;
   }
 
@@ -89,16 +112,12 @@ function resolveLegacyDirectionId(input: {
 }) {
   if (
     input.translationMode === "bidirectional_auto" &&
-    ((input.leftLanguage === "zh-CN" && input.rightLanguage === "ja-JP") ||
-      (input.leftLanguage === "ja-JP" && input.rightLanguage === "zh-CN"))
+    isBidirectionalAutoLanguagePairSupported(input.leftLanguage, input.rightLanguage)
   ) {
     return "zh-ja-auto" as const;
   }
 
-  return (
-    resolveUiDirection(input.leftLanguage, input.rightLanguage)?.id ??
-    getUiDirectionById(DEFAULT_UI_DIRECTION_ID)!.id
-  );
+  return resolveUiDirection(input.leftLanguage, input.rightLanguage)?.id ?? DEFAULT_UI_DIRECTION_ID;
 }
 
 const nodeEnv = normalizeNodeEnv(process.env.NODE_ENV);
@@ -111,6 +130,7 @@ const defaultTranslationMode = normalizeTranslationMode(
 const normalizedRuntimeLanguages = normalizeRuntimeLanguageDefaults({
   leftLanguage: normalizeRuntimeLanguage(process.env.DEFAULT_LEFT_LANGUAGE, "zh-CN"),
   rightLanguage: normalizeRuntimeLanguage(process.env.DEFAULT_RIGHT_LANGUAGE, "ja-JP"),
+  translationMode: defaultTranslationMode,
 });
 const defaultLeftLanguage = normalizedRuntimeLanguages.leftLanguage;
 const defaultRightLanguage = normalizedRuntimeLanguages.rightLanguage;

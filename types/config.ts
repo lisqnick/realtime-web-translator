@@ -1,4 +1,9 @@
-export type SupportedLanguageCode = "zh-CN" | "ja-JP" | "en-US" | "ko-KR";
+export type SupportedLanguageCode =
+  | "zh-CN"
+  | "ja-JP"
+  | "en-US"
+  | "ko-KR"
+  | "es-ES";
 
 export type TranslationDirectionMode = "fixed" | "auto_zh_ja";
 export type TranslationMode = "fixed" | "bidirectional_auto";

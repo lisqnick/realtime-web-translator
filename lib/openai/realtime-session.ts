@@ -99,6 +99,8 @@ export function mapSupportedLanguageToRealtimeLanguage(
       return "en";
     case "ko-KR":
       return "ko";
+    case "es-ES":
+      return "es";
   }
 }
 

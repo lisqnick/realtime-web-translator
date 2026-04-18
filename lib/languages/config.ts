@@ -40,7 +40,27 @@ export const languageCatalog: LanguageConfig[] = [
     translationDisplayName: "한국어",
     enabled: true,
   },
+  {
+    label: "西班牙语",
+    code: "es-ES",
+    locale: "es-ES",
+    speechRecognitionHint: "Spanish",
+    translationDisplayName: "Español",
+    enabled: true,
+  },
 ];
+
+export const FIXED_TRANSLATION_LANGUAGE_CODES = [
+  "zh-CN",
+  "ja-JP",
+  "en-US",
+  "ko-KR",
+  "es-ES",
+] as const satisfies readonly SupportedLanguageCode[];
+
+export const AUTO_BIDIRECTIONAL_LANGUAGE_PAIRS = [
+  ["zh-CN", "ja-JP"],
+] as const satisfies readonly [SupportedLanguageCode, SupportedLanguageCode][];
 
 export const uiLanguageDirections: UiLanguageDirection[] = [
   {
@@ -76,14 +96,14 @@ export const uiLanguageDirections: UiLanguageDirection[] = [
 ];
 
 export const DEFAULT_UI_DIRECTION_ID: UiLanguageDirectionId = "zh-CN__ja-JP";
-export const AUTO_BIDIRECTIONAL_LANGUAGE_CODES: readonly SupportedLanguageCode[] = [
-  "zh-CN",
-  "ja-JP",
-];
+export const AUTO_BIDIRECTIONAL_LANGUAGE_CODES = Array.from(
+  new Set(AUTO_BIDIRECTIONAL_LANGUAGE_PAIRS.flatMap((pair) => pair)),
+) as readonly SupportedLanguageCode[];
 
 const languageIndex = new Map(languageCatalog.map((language) => [language.code, language]));
 const directionIndex = new Map(uiLanguageDirections.map((direction) => [direction.id, direction]));
 const languageCodeSet = new Set(languageCatalog.map((language) => language.code));
+const fixedLanguageCodeSet = new Set<SupportedLanguageCode>(FIXED_TRANSLATION_LANGUAGE_CODES);
 const uiDirectionCycleOrder: UiLanguageDirectionId[] = [
   "zh-CN__ja-JP",
   "zh-ja-auto",
@@ -103,12 +123,14 @@ export function getLanguageConfig(code: SupportedLanguageCode) {
 export function getEnabledLanguageConfigs(mode?: TranslationMode) {
   const enabledLanguages = languageCatalog.filter((language) => language.enabled);
 
-  if (mode !== "bidirectional_auto") {
-    return enabledLanguages;
+  if (mode === "bidirectional_auto") {
+    return enabledLanguages.filter((language) =>
+      AUTO_BIDIRECTIONAL_LANGUAGE_CODES.includes(language.code),
+    );
   }
 
   return enabledLanguages.filter((language) =>
-    AUTO_BIDIRECTIONAL_LANGUAGE_CODES.includes(language.code),
+    fixedLanguageCodeSet.has(language.code),
   );
 }
 
@@ -134,7 +156,7 @@ export function isAutoZhJaLanguagePair(
   sourceLanguage: SupportedLanguageCode,
   targetLanguage: SupportedLanguageCode,
 ) {
-  return sourceLanguage === "zh-CN" && targetLanguage === "zh-CN";
+  return isBidirectionalAutoLanguagePairSupported(sourceLanguage, targetLanguage);
 }
 
 export function resolveUiDirection(
@@ -145,5 +167,20 @@ export function resolveUiDirection(
     (direction) =>
       direction.sourceLanguage === sourceLanguage &&
       direction.targetLanguage === targetLanguage,
+  );
+}
+
+export function isFixedTranslationLanguageSupported(code: SupportedLanguageCode) {
+  return fixedLanguageCodeSet.has(code);
+}
+
+export function isBidirectionalAutoLanguagePairSupported(
+  leftLanguage: SupportedLanguageCode,
+  rightLanguage: SupportedLanguageCode,
+) {
+  return AUTO_BIDIRECTIONAL_LANGUAGE_PAIRS.some(
+    ([languageA, languageB]) =>
+      (leftLanguage === languageA && rightLanguage === languageB) ||
+      (leftLanguage === languageB && rightLanguage === languageA),
   );
 }
