@@ -15,6 +15,7 @@ import type {
   SupportedLanguageCode,
   TranslationMode,
 } from "@/types/config";
+import type { AudioRuntimeMode } from "@/types/realtime";
 
 import styles from "./translator-shell.module.css";
 
@@ -148,6 +149,7 @@ export function TranslatorShell({ runtimeDefaults }: TranslatorShellProps) {
   const [scenarioId, setScenarioId] = useState<ScenarioId>(
     runtimeDefaults.defaultScenarioId,
   );
+  const [audioRuntimeMode, setAudioRuntimeMode] = useState<AudioRuntimeMode>("normal");
   const secureContext = useSyncExternalStore(
     () => () => undefined,
     () => (window.isSecureContext ? "yes" : "no"),
@@ -184,6 +186,7 @@ export function TranslatorShell({ runtimeDefaults }: TranslatorShellProps) {
     sourceLanguage: leftLanguage,
     targetLanguage: rightLanguage,
     scenario: scenarioId,
+    audioRuntimeMode,
     debugPerfLogs: runtimeDefaults.debugPerfLogs,
   });
   const feedEndRef = useRef<HTMLDivElement | null>(null);
@@ -420,6 +423,19 @@ export function TranslatorShell({ runtimeDefaults }: TranslatorShellProps) {
                 <option value="fixed">单向翻译</option>
               </select>
             </label>
+            <label className={styles.scenarioField}>
+              <span>嘈杂环境</span>
+              <select
+                value={audioRuntimeMode}
+                disabled={controlsLocked}
+                onChange={(event) =>
+                  setAudioRuntimeMode(event.target.value as AudioRuntimeMode)
+                }
+              >
+                <option value="normal">关闭</option>
+                <option value="noisy">开启</option>
+              </select>
+            </label>
           </div>
         </header>
 
@@ -540,6 +556,10 @@ export function TranslatorShell({ runtimeDefaults }: TranslatorShellProps) {
                       process.env.NEXT_PUBLIC_REALTIME_MODEL_HINT ??
                       "server-managed"}
                   </dd>
+                </div>
+                <div>
+                  <dt>Audio Runtime Mode</dt>
+                  <dd>{state.sessionAudioRuntimeMode ?? audioRuntimeMode}</dd>
                 </div>
                 <div>
                   <dt>Turn Detection</dt>

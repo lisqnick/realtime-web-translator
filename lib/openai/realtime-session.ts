@@ -1,7 +1,8 @@
-import { AUDIO_RUNTIME_CONFIG, getAudioRuntimeTurnDetectionConfig } from "@/config/audio-runtime";
+import { getAudioRuntimeConfig, getAudioRuntimeTurnDetectionConfig } from "@/config/audio-runtime";
 import { serverEnv } from "@/config/env";
 import type { SupportedLanguageCode } from "@/types/config";
 import type {
+  AudioRuntimeMode,
   RealtimeSessionResponse,
   RealtimeTranscriptionLanguage,
   RealtimeTurnDetectionConfig,
@@ -11,6 +12,7 @@ const OPENAI_REALTIME_CLIENT_SECRETS_URL =
   "https://api.openai.com/v1/realtime/client_secrets";
 interface CreateRealtimeSessionInput {
   sourceLanguage?: SupportedLanguageCode;
+  audioRuntimeMode?: AudioRuntimeMode;
 }
 
 interface OpenAIRealtimeSessionPayload {
@@ -112,19 +114,25 @@ export function mapSupportedLanguageToRealtimeLanguage(
   }
 }
 
-export function buildRealtimeTurnDetectionConfig(): RealtimeTurnDetectionConfig {
-  return getAudioRuntimeTurnDetectionConfig();
+export function buildRealtimeTurnDetectionConfig(
+  audioRuntimeMode: AudioRuntimeMode = "normal",
+): RealtimeTurnDetectionConfig {
+  return getAudioRuntimeTurnDetectionConfig(audioRuntimeMode);
 }
 
-export function buildRealtimeSessionConfig({ sourceLanguage }: CreateRealtimeSessionInput) {
-  const turnDetection = buildRealtimeTurnDetectionConfig();
+export function buildRealtimeSessionConfig({
+  sourceLanguage,
+  audioRuntimeMode = "normal",
+}: CreateRealtimeSessionInput) {
+  const audioRuntimeConfig = getAudioRuntimeConfig(audioRuntimeMode);
+  const turnDetection = buildRealtimeTurnDetectionConfig(audioRuntimeMode);
 
   return {
     type: "transcription" as const,
     audio: {
       input: {
         noise_reduction: {
-          type: AUDIO_RUNTIME_CONFIG.noiseReduction,
+          type: audioRuntimeConfig.noiseReduction,
         },
         transcription: {
           model: serverEnv.realtimeTranscriptionModel,
@@ -149,6 +157,7 @@ export function buildRealtimeSessionConfig({ sourceLanguage }: CreateRealtimeSes
 
 export async function createRealtimeSession({
   sourceLanguage,
+  audioRuntimeMode = "normal",
 }: CreateRealtimeSessionInput): Promise<RealtimeSessionResponse> {
   if (!serverEnv.openAiApiKey) {
     throw new RealtimeSessionCreationError({
@@ -158,7 +167,7 @@ export async function createRealtimeSession({
     });
   }
 
-  const sessionConfig = buildRealtimeSessionConfig({ sourceLanguage });
+  const sessionConfig = buildRealtimeSessionConfig({ sourceLanguage, audioRuntimeMode });
   const clientRequestId = crypto.randomUUID();
 
   const response = await fetch(OPENAI_REALTIME_CLIENT_SECRETS_URL, {
@@ -218,15 +227,17 @@ export async function createRealtimeSession({
       language:
         (transcription?.language as RealtimeTranscriptionLanguage | undefined) ??
         (sourceLanguage ? mapSupportedLanguageToRealtimeLanguage(sourceLanguage) : "zh"),
+      audioRuntimeMode,
       turnDetection: {
         type: "server_vad",
-        threshold: turnDetection?.threshold ?? getAudioRuntimeTurnDetectionConfig().threshold,
+        threshold:
+          turnDetection?.threshold ?? getAudioRuntimeTurnDetectionConfig(audioRuntimeMode).threshold,
         prefixPaddingMs:
           turnDetection?.prefix_padding_ms ??
-          getAudioRuntimeTurnDetectionConfig().prefixPaddingMs,
+          getAudioRuntimeTurnDetectionConfig(audioRuntimeMode).prefixPaddingMs,
         silenceDurationMs:
           turnDetection?.silence_duration_ms ??
-          getAudioRuntimeTurnDetectionConfig().silenceDurationMs,
+          getAudioRuntimeTurnDetectionConfig(audioRuntimeMode).silenceDurationMs,
       },
       include: normalizedSession.include ?? [],
     },

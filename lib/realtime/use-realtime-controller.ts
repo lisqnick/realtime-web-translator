@@ -14,6 +14,7 @@ import type {
   TranslationBubble,
 } from "@/types/bubble";
 import type {
+  AudioRuntimeMode,
   ParsedRealtimeEvent,
   RealtimeBrowserConnection,
   RealtimeConnectionSnapshot,
@@ -77,6 +78,7 @@ type ControllerAction =
       sessionId: string;
       sessionExpiresAt: number | null;
       sessionModel: string;
+      sessionAudioRuntimeMode: AudioRuntimeMode;
       sessionTurnDetectionType: string;
       sessionSilenceDurationMs: number;
     }
@@ -152,6 +154,7 @@ const initialState: RealtimeControllerState = {
   sessionId: null,
   sessionExpiresAt: null,
   sessionModel: null,
+  sessionAudioRuntimeMode: null,
   sessionTurnDetectionType: null,
   sessionSilenceDurationMs: null,
   peerConnectionState: "new",
@@ -194,6 +197,7 @@ function reducer(
         sessionId: action.sessionId,
         sessionExpiresAt: action.sessionExpiresAt,
         sessionModel: action.sessionModel,
+        sessionAudioRuntimeMode: action.sessionAudioRuntimeMode,
         sessionTurnDetectionType: action.sessionTurnDetectionType,
         sessionSilenceDurationMs: action.sessionSilenceDurationMs,
       };
@@ -291,6 +295,7 @@ function reducer(
         sessionId: null,
         sessionExpiresAt: null,
         sessionModel: state.sessionModel,
+        sessionAudioRuntimeMode: state.sessionAudioRuntimeMode,
         sessionTurnDetectionType: state.sessionTurnDetectionType,
         sessionSilenceDurationMs: state.sessionSilenceDurationMs,
         peerConnectionState: "new",
@@ -311,6 +316,7 @@ export function useRealtimeController(options: {
   sourceLanguage: SupportedLanguageCode;
   targetLanguage: SupportedLanguageCode;
   scenario: ScenarioId;
+  audioRuntimeMode: AudioRuntimeMode;
   debugPerfLogs?: boolean;
 }) {
   const [state, dispatch] = useReducer(reducer, initialState);
@@ -1209,6 +1215,7 @@ export function useRealtimeController(options: {
       const realtimeSession = await requestRealtimeSession({
         sourceLanguage:
           options.directionMode === "auto_selected_pair" ? undefined : options.sourceLanguage,
+        audioRuntimeMode: options.audioRuntimeMode,
         signal: abortController.signal,
       });
 
@@ -1222,6 +1229,7 @@ export function useRealtimeController(options: {
         sessionId: realtimeSession.session.id,
         sessionExpiresAt: realtimeSession.clientSecret.expiresAt,
         sessionModel: realtimeSession.session.model,
+        sessionAudioRuntimeMode: realtimeSession.session.audioRuntimeMode,
         sessionTurnDetectionType: realtimeSession.session.turnDetection.type,
         sessionSilenceDurationMs: realtimeSession.session.turnDetection.silenceDurationMs,
       });
@@ -1396,6 +1404,7 @@ export function useRealtimeController(options: {
     clearBubbleSealTimer,
     clearLiveTranscriptOnly,
     markPerf,
+    options.audioRuntimeMode,
     options.directionMode,
     options.sourceLanguage,
     recordRealtimeEvent,

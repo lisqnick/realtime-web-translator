@@ -2,9 +2,17 @@ import { NextResponse } from "next/server";
 
 import { createRealtimeSession, RealtimeSessionCreationError } from "@/lib/openai/realtime-session";
 import { isSupportedLanguageCode } from "@/lib/languages/config";
-import type { ApiErrorResponse, RealtimeSessionRequest } from "@/types/realtime";
+import type {
+  ApiErrorResponse,
+  AudioRuntimeMode,
+  RealtimeSessionRequest,
+} from "@/types/realtime";
 
 export const runtime = "nodejs";
+
+function normalizeAudioRuntimeMode(value: string | undefined): AudioRuntimeMode {
+  return value === "noisy" ? "noisy" : "normal";
+}
 
 export async function POST(request: Request) {
   let payload: RealtimeSessionRequest = {};
@@ -42,6 +50,7 @@ export async function POST(request: Request) {
   try {
     const session = await createRealtimeSession({
       sourceLanguage: payload.sourceLanguage,
+      audioRuntimeMode: normalizeAudioRuntimeMode(payload.audioRuntimeMode),
     });
 
     return NextResponse.json(session, {

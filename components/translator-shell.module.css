@@ -79,7 +79,7 @@
 
 .headerMetaCompact {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
 }
 
@@ -423,6 +423,14 @@
 
   .scenarioField select {
     min-height: 36px;
+  }
+
+  .headerMetaCompact {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .headerMetaCompact .scenarioField:last-child {
+    grid-column: 1 / -1;
   }
 
   .controlDotDock {

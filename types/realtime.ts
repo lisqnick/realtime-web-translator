@@ -30,11 +30,13 @@ export type RealtimeTranscriptionLanguage =
   | "ar"
   | "pt"
   | "de";
+export type AudioRuntimeMode = "normal" | "noisy";
 export type RealtimeVadMode = "server_vad";
 export type RealtimeNoiseReductionType = "near_field" | "far_field" | "none";
 
 export interface RealtimeSessionRequest {
   sourceLanguage?: SupportedLanguageCode;
+  audioRuntimeMode?: AudioRuntimeMode;
 }
 
 export interface RealtimeClientSecret {
@@ -55,6 +57,7 @@ export interface RealtimeTranscriptionSessionSummary {
   expiresAt: number | null;
   model: string;
   language: RealtimeTranscriptionLanguage;
+  audioRuntimeMode: AudioRuntimeMode;
   turnDetection: RealtimeTurnDetectionConfig;
   include: string[];
 }
@@ -236,6 +239,7 @@ export interface RealtimeControllerState {
   sessionId: string | null;
   sessionExpiresAt: number | null;
   sessionModel: string | null;
+  sessionAudioRuntimeMode: AudioRuntimeMode | null;
   sessionTurnDetectionType: string | null;
   sessionSilenceDurationMs: number | null;
   peerConnectionState: RTCPeerConnectionState | "new";

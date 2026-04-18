@@ -1,8 +1,13 @@
 import type { SupportedLanguageCode } from "@/types/config";
-import type { ApiErrorResponse, RealtimeSessionResponse } from "@/types/realtime";
+import type {
+  ApiErrorResponse,
+  AudioRuntimeMode,
+  RealtimeSessionResponse,
+} from "@/types/realtime";
 
 export async function requestRealtimeSession(options: {
   sourceLanguage?: SupportedLanguageCode;
+  audioRuntimeMode?: AudioRuntimeMode;
   signal?: AbortSignal;
 }) {
   const response = await fetch("/api/realtime/session", {
@@ -13,6 +18,7 @@ export async function requestRealtimeSession(options: {
     cache: "no-store",
     body: JSON.stringify({
       sourceLanguage: options.sourceLanguage,
+      audioRuntimeMode: options.audioRuntimeMode,
     }),
     signal: options.signal,
   });
