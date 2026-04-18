@@ -12,11 +12,6 @@ export type SupportedLanguageCode =
 export type TranslationDirectionMode = "fixed" | "auto_zh_ja";
 export type TranslationMode = "fixed" | "bidirectional_auto";
 
-export type UiLanguageDirectionId =
-  | "zh-CN__ja-JP"
-  | "ja-JP__zh-CN"
-  | "zh-ja-auto";
-
 export type ScenarioId =
   | "general"
   | "shopping"
@@ -55,17 +50,6 @@ export interface LanguageConfig {
   enabled: boolean;
 }
 
-export interface UiLanguageDirection {
-  id: UiLanguageDirectionId;
-  label: string;
-  mode: TranslationDirectionMode;
-  sourceLanguage: SupportedLanguageCode;
-  targetLanguage: SupportedLanguageCode;
-  sourceLabel: string;
-  targetLabel: string;
-  enabled: boolean;
-}
-
 export interface SelectedLanguagePair {
   languages: [SupportedLanguageCode, SupportedLanguageCode];
   mode: TranslationMode;
@@ -82,7 +66,6 @@ export interface ScenarioConfig {
 }
 
 export interface PublicRuntimeDefaults {
-  defaultDirectionId: UiLanguageDirectionId | null;
   defaultLeftLanguage: SupportedLanguageCode;
   defaultRightLanguage: SupportedLanguageCode;
   defaultTranslationMode: TranslationMode;

@@ -4,7 +4,6 @@ import {
   isBidirectionalAutoLanguagePairSupported,
   isFixedTranslationLanguageSupported,
   isSupportedLanguageCode,
-  resolveUiDirection,
 } from "@/lib/languages/config";
 import { DEFAULT_SCENARIO_ID, isScenarioId } from "@/lib/scenarios/config";
 import type {
@@ -104,21 +103,6 @@ function normalizeRuntimeLanguageDefaults(input: {
   };
 }
 
-function resolveLegacyDirectionId(input: {
-  leftLanguage: SupportedLanguageCode;
-  rightLanguage: SupportedLanguageCode;
-  translationMode: TranslationMode;
-}) {
-  if (
-    input.translationMode === "bidirectional_auto" &&
-    isBidirectionalAutoLanguagePairSupported(input.leftLanguage, input.rightLanguage)
-  ) {
-    return "zh-ja-auto" as const;
-  }
-
-  return resolveUiDirection(input.leftLanguage, input.rightLanguage)?.id ?? null;
-}
-
 const nodeEnv = normalizeNodeEnv(process.env.NODE_ENV);
 const defaultScenarioId = isScenarioId(process.env.DEFAULT_SCENARIO)
   ? process.env.DEFAULT_SCENARIO
@@ -133,11 +117,6 @@ const normalizedRuntimeLanguages = normalizeRuntimeLanguageDefaults({
 });
 const defaultLeftLanguage = normalizedRuntimeLanguages.leftLanguage;
 const defaultRightLanguage = normalizedRuntimeLanguages.rightLanguage;
-const compatibilityDirectionId = resolveLegacyDirectionId({
-  leftLanguage: defaultLeftLanguage,
-  rightLanguage: defaultRightLanguage,
-  translationMode: defaultTranslationMode,
-});
 
 export const serverEnv = {
   openAiApiKey: readString(process.env.OPENAI_API_KEY, ""),
@@ -161,7 +140,6 @@ export const serverEnv = {
 };
 
 export const publicRuntimeDefaults: PublicRuntimeDefaults = {
-  defaultDirectionId: compatibilityDirectionId,
   defaultLeftLanguage,
   defaultRightLanguage,
   defaultTranslationMode,
