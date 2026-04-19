@@ -8,7 +8,7 @@ import {
   getLanguageConfig,
 } from "@/lib/languages/config";
 import { useRealtimeController } from "@/lib/realtime/use-realtime-controller";
-import { getScenarioById, scenarioCatalog } from "@/lib/scenarios/config";
+import { scenarioCatalog } from "@/lib/scenarios/config";
 import type {
   PublicRuntimeDefaults,
   ScenarioId,
@@ -22,12 +22,6 @@ import styles from "./translator-shell.module.css";
 interface TranslatorShellProps {
   runtimeDefaults: PublicRuntimeDefaults;
 }
-
-const bubbleStatusLabel = {
-  live: "实时",
-  stable: "稳定",
-  closed: "已收起",
-} as const;
 
 const AUTO_SCROLL_BOTTOM_GAP_PX = -14;
 const AUTO_SCROLL_THRESHOLD_PX = 180;
@@ -482,33 +476,12 @@ export function TranslatorShell({ runtimeDefaults }: TranslatorShellProps) {
                 bubble.status === "live" ? styles.liveMessageCard : ""
               }`}
             >
-              <div className={styles.cardMeta}>
-                <span>
-                  {bubble.finalTranslationStatus === "streaming"
-                    ? "正在整理最终译文"
-                    : bubble.isTranslating
-                      ? "翻译中"
-                      : bubbleStatusLabel[bubble.status]}
-                </span>
-                <span>{getScenarioById(bubble.scenario)?.label ?? "通用"}</span>
-              </div>
               <div className={styles.sourceBlock}>
-                <p className={styles.blockLabel}>原文</p>
                 <p className={styles.sourceText} dir="auto">
                   {bubble.mergedSourceText || "正在等待这张卡里的原文内容..."}
                 </p>
               </div>
               <div className={styles.translationBlock}>
-                <div className={styles.blockHeader}>
-                  <p className={styles.blockLabel}>译文</p>
-                  <span className={styles.blockState}>
-                    {bubble.finalTranslationStatus === "streaming"
-                      ? `正在整理最终译文 · ${bubble.chunkCount} 段`
-                      : bubble.isTranslating
-                        ? `翻译中 · ${bubble.chunkCount} 段`
-                        : `${bubbleStatusLabel[bubble.status]} · ${bubble.chunkCount} 段`}
-                  </span>
-                </div>
                 <p className={styles.translationText} dir="auto">
                   {bubble.mergedTranslationText ||
                     "…"}
