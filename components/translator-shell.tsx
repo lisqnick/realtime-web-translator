@@ -758,7 +758,11 @@ export function TranslatorShell({ runtimeDefaults }: TranslatorShellProps) {
         ) : null}
       </div>
 
-      <div className={styles.controlDotDock}>
+      <div
+        className={`${styles.controlDotDock} ${
+          isGhostListeningRing ? styles.controlDotDockGhostCentered : ""
+        }`}
+      >
         <button
           type="button"
           className={`${styles.controlDot} ${styles[`controlDot--${controlDotTone}`]} ${
