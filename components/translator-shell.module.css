@@ -343,29 +343,11 @@
   --control-dot-size: 108px;
   --control-dot-core-size: 36px;
   position: fixed;
-  top: clamp(280px, 58vh, 420px);
-  right: max(
-    calc(env(safe-area-inset-right, 0px) - (var(--control-dot-size) / 3)),
-    calc(
-      (100vw - min(540px, calc(100vw - 24px))) / 2 -
-        (var(--control-dot-size) / 3)
-    )
-  );
-  transform: translateY(-50%);
-  z-index: 12;
-  pointer-events: none;
-}
-
-.controlDotDockGhostCentered {
-  position: fixed;
   inset: 0;
-  left: auto;
-  right: auto;
-  top: auto;
-  bottom: auto;
-  transform: none;
   display: grid;
   place-items: center;
+  z-index: 12;
+  pointer-events: none;
 }
 
 .controlDot {
@@ -468,7 +450,5 @@
   .controlDotDock {
     --control-dot-size: 100px;
     --control-dot-core-size: 32px;
-    top: clamp(250px, 57vh, 360px);
-    right: calc(env(safe-area-inset-right, 0px) - (var(--control-dot-size) / 3));
   }
 }
