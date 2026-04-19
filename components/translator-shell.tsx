@@ -763,7 +763,6 @@ export function TranslatorShell({ runtimeDefaults }: TranslatorShellProps) {
           aria-label={controlDotLabel}
         >
           <span className="visually-hidden">{controlDotLabel}</span>
-          <span className={styles.controlDotCore} aria-hidden="true" />
         </button>
       </div>
     </section>

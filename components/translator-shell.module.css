@@ -363,64 +363,32 @@
   width: var(--control-dot-size);
   height: var(--control-dot-size);
   padding: 0;
-  border: 1px solid var(--dot-ring, rgba(255, 255, 255, 0.4));
+  border: 2px solid var(--dot-ring, rgba(255, 255, 255, 0.4));
   border-radius: 999px;
   background: transparent;
   box-shadow:
-    0 10px 22px rgba(0, 0, 0, 0.3),
-    0 0 0 1px rgba(150, 220, 255, 0.04);
+    0 0 0 1px rgba(255, 255, 255, 0.03),
+    0 0 18px var(--dot-glow, rgba(84, 184, 255, 0.1));
   pointer-events: auto;
   transition:
-    color 160ms ease,
     border-color 160ms ease,
     opacity 160ms ease,
     box-shadow 160ms ease;
 }
 
-.controlDotCore {
-  width: var(--control-dot-core-size);
-  height: var(--control-dot-core-size);
-  border-radius: 999px;
-  background:
-    radial-gradient(
-      circle at 32% 30%,
-      var(--dot-highlight, rgba(255, 255, 255, 0.95)) 0%,
-      var(--dot-highlight, rgba(255, 255, 255, 0.95)) 18%,
-      transparent 48%
-    ),
-    linear-gradient(
-      160deg,
-      var(--dot-tint-soft, rgba(255, 255, 255, 0.88)) 0%,
-      var(--dot-tint-main, rgba(62, 146, 92, 0.92)) 58%,
-      var(--dot-tint-deep, rgba(86, 164, 112, 0.96)) 100%
-    );
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.38),
-    0 6px 14px rgba(0, 0, 0, 0.28);
-}
-
 .controlDot--success {
-  --dot-tint-soft: rgba(210, 250, 222, 0.86);
-  --dot-tint-main: rgba(82, 176, 122, 0.9);
-  --dot-tint-deep: rgba(55, 124, 82, 0.96);
-  --dot-ring: rgba(83, 176, 123, 0.3);
-  color: rgba(98, 196, 139, 0.94);
+  --dot-ring: rgba(110, 214, 160, 0.78);
+  --dot-glow: rgba(110, 214, 160, 0.14);
 }
 
 .controlDot--info {
-  --dot-tint-soft: rgba(220, 244, 255, 0.92);
-  --dot-tint-main: rgba(90, 174, 233, 0.92);
-  --dot-tint-deep: rgba(39, 107, 182, 0.98);
-  --dot-ring: rgba(83, 180, 255, 0.3);
-  color: rgba(97, 191, 255, 0.96);
+  --dot-ring: rgba(78, 162, 255, 0.82);
+  --dot-glow: rgba(78, 162, 255, 0.18);
 }
 
 .controlDot--danger {
-  --dot-tint-soft: rgba(255, 224, 228, 0.9);
-  --dot-tint-main: rgba(224, 109, 125, 0.92);
-  --dot-tint-deep: rgba(158, 52, 76, 0.98);
-  --dot-ring: rgba(241, 118, 136, 0.28);
-  color: rgba(245, 126, 144, 0.95);
+  --dot-ring: rgba(255, 96, 118, 0.82);
+  --dot-glow: rgba(255, 96, 118, 0.14);
 }
 
 .controlDot--disabled {
