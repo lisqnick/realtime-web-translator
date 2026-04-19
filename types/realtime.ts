@@ -1,6 +1,7 @@
 import type {
   MicPermissionStatus,
   SupportedLanguageCode,
+  TranslationDirectionMode,
   TranslationAppStatus,
 } from "@/types/config";
 import type {
@@ -35,7 +36,9 @@ export type RealtimeVadMode = "server_vad";
 export type RealtimeNoiseReductionType = "near_field" | "far_field" | "none";
 
 export interface RealtimeSessionRequest {
+  directionMode?: TranslationDirectionMode;
   sourceLanguage?: SupportedLanguageCode;
+  targetLanguage?: SupportedLanguageCode;
   audioRuntimeMode?: AudioRuntimeMode;
 }
 
@@ -56,9 +59,11 @@ export interface RealtimeTranscriptionSessionSummary {
   type: "transcription";
   expiresAt: number | null;
   model: string;
-  language: RealtimeTranscriptionLanguage;
+  language: RealtimeTranscriptionLanguage | null;
   audioRuntimeMode: AudioRuntimeMode;
   turnDetection: RealtimeTurnDetectionConfig;
+  promptSummary: string | null;
+  logprobsEnabled: boolean;
   include: string[];
 }
 
@@ -143,6 +148,7 @@ export interface ParsedTranscriptCompletedEvent {
   itemId: string;
   contentIndex: number;
   transcript: string;
+  avgLogprob?: number | null;
 }
 
 export interface ParsedTranscriptSegmentEvent {
@@ -239,9 +245,13 @@ export interface RealtimeControllerState {
   sessionId: string | null;
   sessionExpiresAt: number | null;
   sessionModel: string | null;
+  sessionTranscriptionLanguage: RealtimeTranscriptionLanguage | null;
+  sessionTranscriptionPromptSummary: string | null;
+  sessionTranscriptionLogprobsEnabled: boolean | null;
   sessionAudioRuntimeMode: AudioRuntimeMode | null;
   sessionTurnDetectionType: string | null;
   sessionSilenceDurationMs: number | null;
+  badSessionAutoRecovered: boolean;
   peerConnectionState: RTCPeerConnectionState | "new";
   iceConnectionState: RTCIceConnectionState | "new";
   signalingState: RTCSignalingState | "stable";

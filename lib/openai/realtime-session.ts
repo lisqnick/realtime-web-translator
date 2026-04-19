@@ -1,6 +1,10 @@
 import { getAudioRuntimeConfig, getAudioRuntimeTurnDetectionConfig } from "@/config/audio-runtime";
 import { serverEnv } from "@/config/env";
-import type { SupportedLanguageCode } from "@/types/config";
+import { buildRealtimeTranscriptionPrompt, buildRealtimeTranscriptionPromptSummary } from "@/lib/realtime/transcription-prompt";
+import type {
+  SupportedLanguageCode,
+  TranslationDirectionMode,
+} from "@/types/config";
 import type {
   AudioRuntimeMode,
   RealtimeSessionResponse,
@@ -11,7 +15,9 @@ import type {
 const OPENAI_REALTIME_CLIENT_SECRETS_URL =
   "https://api.openai.com/v1/realtime/client_secrets";
 interface CreateRealtimeSessionInput {
+  directionMode?: TranslationDirectionMode;
   sourceLanguage?: SupportedLanguageCode;
+  targetLanguage?: SupportedLanguageCode;
   audioRuntimeMode?: AudioRuntimeMode;
 }
 
@@ -24,6 +30,7 @@ interface OpenAIRealtimeSessionPayload {
       input?: {
         transcription?: {
           model?: string;
+          prompt?: string;
           language?: string;
         };
         turn_detection?: {
@@ -121,11 +128,18 @@ export function buildRealtimeTurnDetectionConfig(
 }
 
 export function buildRealtimeSessionConfig({
+  directionMode = "fixed",
   sourceLanguage,
+  targetLanguage,
   audioRuntimeMode = "normal",
 }: CreateRealtimeSessionInput) {
   const audioRuntimeConfig = getAudioRuntimeConfig(audioRuntimeMode);
   const turnDetection = buildRealtimeTurnDetectionConfig(audioRuntimeMode);
+  const transcriptionPrompt = buildRealtimeTranscriptionPrompt({
+    directionMode,
+    sourceLanguage,
+    targetLanguage,
+  });
 
   return {
     type: "transcription" as const,
@@ -136,8 +150,8 @@ export function buildRealtimeSessionConfig({
         },
         transcription: {
           model: serverEnv.realtimeTranscriptionModel,
-          prompt: "",
-          ...(sourceLanguage
+          prompt: transcriptionPrompt,
+          ...(directionMode === "fixed" && sourceLanguage
             ? {
                 language: mapSupportedLanguageToRealtimeLanguage(sourceLanguage),
               }
@@ -151,12 +165,14 @@ export function buildRealtimeSessionConfig({
         },
       },
     },
-    include: [] as string[],
+    include: ["item.input_audio_transcription.logprobs"] as string[],
   };
 }
 
 export async function createRealtimeSession({
+  directionMode = "fixed",
   sourceLanguage,
+  targetLanguage,
   audioRuntimeMode = "normal",
 }: CreateRealtimeSessionInput): Promise<RealtimeSessionResponse> {
   if (!serverEnv.openAiApiKey) {
@@ -167,7 +183,12 @@ export async function createRealtimeSession({
     });
   }
 
-  const sessionConfig = buildRealtimeSessionConfig({ sourceLanguage, audioRuntimeMode });
+  const sessionConfig = buildRealtimeSessionConfig({
+    directionMode,
+    sourceLanguage,
+    targetLanguage,
+    audioRuntimeMode,
+  });
   const clientRequestId = crypto.randomUUID();
 
   const response = await fetch(OPENAI_REALTIME_CLIENT_SECRETS_URL, {
@@ -200,6 +221,7 @@ export async function createRealtimeSession({
   const normalizedSession = payload.session ?? payload;
   const clientSecretValue = payload.client_secret?.value ?? payload.value;
   const clientSecretExpiresAt = payload.client_secret?.expires_at ?? payload.expires_at ?? null;
+  const include = normalizedSession.include ?? sessionConfig.include;
 
   if (!clientSecretValue || !normalizedSession.id) {
     throw new RealtimeSessionCreationError({
@@ -226,7 +248,9 @@ export async function createRealtimeSession({
       model: transcription?.model ?? serverEnv.realtimeTranscriptionModel,
       language:
         (transcription?.language as RealtimeTranscriptionLanguage | undefined) ??
-        (sourceLanguage ? mapSupportedLanguageToRealtimeLanguage(sourceLanguage) : "zh"),
+        (directionMode === "fixed" && sourceLanguage
+          ? mapSupportedLanguageToRealtimeLanguage(sourceLanguage)
+          : null),
       audioRuntimeMode,
       turnDetection: {
         type: "server_vad",
@@ -239,7 +263,15 @@ export async function createRealtimeSession({
           turnDetection?.silence_duration_ms ??
           getAudioRuntimeTurnDetectionConfig(audioRuntimeMode).silenceDurationMs,
       },
-      include: normalizedSession.include ?? [],
+      promptSummary: buildRealtimeTranscriptionPromptSummary({
+        directionMode,
+        sourceLanguage,
+        targetLanguage,
+      }),
+      logprobsEnabled: include.includes(
+        "item.input_audio_transcription.logprobs",
+      ),
+      include,
     },
   };
 }

@@ -19,6 +19,7 @@ import type {
   RealtimeBrowserConnection,
   RealtimeConnectionSnapshot,
   RealtimeControllerState,
+  RealtimeServerEvent,
   RealtimeTimelineEntry,
   TranscriptPerfSnapshot,
   TranscriptStateSnapshot,
@@ -78,6 +79,9 @@ type ControllerAction =
       sessionId: string;
       sessionExpiresAt: number | null;
       sessionModel: string;
+      sessionTranscriptionLanguage: RealtimeControllerState["sessionTranscriptionLanguage"];
+      sessionTranscriptionPromptSummary: string | null;
+      sessionTranscriptionLogprobsEnabled: boolean;
       sessionAudioRuntimeMode: AudioRuntimeMode;
       sessionTurnDetectionType: string;
       sessionSilenceDurationMs: number;
@@ -127,6 +131,11 @@ type ControllerAction =
       type: "reset";
       preserveFinalizedSegments?: boolean;
       preserveTranslatedSegments?: boolean;
+      preserveBadSessionAutoRecovered?: boolean;
+    }
+  | {
+      type: "bad_session_auto_recovered";
+      value: boolean;
     };
 
 const initialState: RealtimeControllerState = {
@@ -154,9 +163,13 @@ const initialState: RealtimeControllerState = {
   sessionId: null,
   sessionExpiresAt: null,
   sessionModel: null,
+  sessionTranscriptionLanguage: null,
+  sessionTranscriptionPromptSummary: null,
+  sessionTranscriptionLogprobsEnabled: null,
   sessionAudioRuntimeMode: null,
   sessionTurnDetectionType: null,
   sessionSilenceDurationMs: null,
+  badSessionAutoRecovered: false,
   peerConnectionState: "new",
   iceConnectionState: "new",
   signalingState: "stable",
@@ -173,6 +186,175 @@ function isBackgroundStopRelevantStatus(appStatus: RealtimeControllerState["appS
     appStatus === "connecting_realtime" ||
     appStatus === "listening"
   );
+}
+
+const HANGUL_REGEX = /[\u1100-\u11ff\u3130-\u318f\uac00-\ud7af]/u;
+const JAPANESE_KANA_REGEX = /[\u3040-\u309f\u30a0-\u30ff]/u;
+const HAN_REGEX = /\p{Script=Han}/u;
+const LATIN_REGEX = /[A-Za-z]/u;
+const LONG_LATIN_WORD_REGEX = /[A-Za-z]{4,}/u;
+const REPEATED_CHARACTER_REGEX = /(.)\1{6,}/u;
+const BAD_SESSION_FIRST_TRANSCRIPT_LOGPROB_THRESHOLD = -1.2;
+const BAD_SESSION_AUTO_RESTART_DELAY_MS = 160;
+
+function containsHangul(text: string) {
+  return HANGUL_REGEX.test(text);
+}
+
+function containsJapaneseKana(text: string) {
+  return JAPANESE_KANA_REGEX.test(text);
+}
+
+function containsHanCharacters(text: string) {
+  return HAN_REGEX.test(text);
+}
+
+function containsLatinLetters(text: string) {
+  return LATIN_REGEX.test(text);
+}
+
+function containsLongLatinWord(text: string) {
+  return LONG_LATIN_WORD_REGEX.test(text);
+}
+
+function looksLikeGibberish(text: string) {
+  return REPEATED_CHARACTER_REGEX.test(text);
+}
+
+function collectLogprobValues(
+  value: unknown,
+  depth = 0,
+  keyHint: string | null = null,
+): number[] {
+  if (depth > 5 || value === null || value === undefined) {
+    return [];
+  }
+
+  if (
+    typeof value === "number" &&
+    Number.isFinite(value) &&
+    keyHint?.toLowerCase().includes("logprob")
+  ) {
+    return [value];
+  }
+
+  if (Array.isArray(value)) {
+    return value.flatMap((entry) => collectLogprobValues(entry, depth + 1, keyHint));
+  }
+
+  if (typeof value === "object") {
+    const objectValue = value as Record<string, unknown>;
+    const values: number[] = [];
+
+    for (const [key, nestedValue] of Object.entries(objectValue)) {
+      const normalizedKey = key.toLowerCase();
+      const shouldTraverse =
+        normalizedKey.includes("logprob") ||
+        keyHint?.toLowerCase().includes("logprob") ||
+        key === "item" ||
+        key === "content" ||
+        key === "transcript";
+
+      if (!shouldTraverse) {
+        continue;
+      }
+
+      values.push(...collectLogprobValues(nestedValue, depth + 1, key));
+    }
+
+    return values;
+  }
+
+  return [];
+}
+
+function readAverageTranscriptionLogprob(event: RealtimeServerEvent) {
+  const values = collectLogprobValues(event).slice(0, 256);
+
+  if (values.length === 0) {
+    return null;
+  }
+
+  const total = values.reduce((sum, value) => sum + value, 0);
+  return total / values.length;
+}
+
+function detectBadFirstTranscriptReason(input: {
+  directionMode: TranslationDirectionMode;
+  sourceLanguage: SupportedLanguageCode;
+  targetLanguage: SupportedLanguageCode;
+  transcript: string;
+  avgLogprob?: number | null;
+}) {
+  const transcript = input.transcript.trim();
+
+  if (!transcript) {
+    return null;
+  }
+
+  if (
+    input.avgLogprob !== null &&
+    input.avgLogprob !== undefined &&
+    input.avgLogprob < BAD_SESSION_FIRST_TRANSCRIPT_LOGPROB_THRESHOLD
+  ) {
+    return "very_low_logprob";
+  }
+
+  if (looksLikeGibberish(transcript)) {
+    return "gibberish";
+  }
+
+  if (containsHangul(transcript)) {
+    return "unexpected_hangul";
+  }
+
+  if (input.directionMode === "fixed") {
+    switch (input.sourceLanguage) {
+      case "zh-CN":
+        if (containsJapaneseKana(transcript)) {
+          return "unexpected_kana";
+        }
+        break;
+      case "ja-JP":
+        if (containsLongLatinWord(transcript) && !containsJapaneseKana(transcript)) {
+          return "unexpected_latin";
+        }
+        break;
+      case "en-US":
+        if (
+          !containsLatinLetters(transcript) &&
+          (containsJapaneseKana(transcript) || containsHanCharacters(transcript))
+        ) {
+          return "unexpected_non_latin";
+        }
+        break;
+      default:
+        break;
+    }
+
+    return null;
+  }
+
+  const pairKey = [input.sourceLanguage, input.targetLanguage].sort().join("__");
+
+  if (pairKey === ["en-US", "zh-CN"].sort().join("__")) {
+    if (containsJapaneseKana(transcript)) {
+      return "unexpected_kana";
+    }
+    return null;
+  }
+
+  if (pairKey === ["en-US", "ja-JP"].sort().join("__")) {
+    return null;
+  }
+
+  if (pairKey === ["ja-JP", "zh-CN"].sort().join("__")) {
+    if (containsLongLatinWord(transcript) && !containsJapaneseKana(transcript)) {
+      return "unexpected_latin";
+    }
+  }
+
+  return null;
 }
 
 function reducer(
@@ -197,9 +379,17 @@ function reducer(
         sessionId: action.sessionId,
         sessionExpiresAt: action.sessionExpiresAt,
         sessionModel: action.sessionModel,
+        sessionTranscriptionLanguage: action.sessionTranscriptionLanguage,
+        sessionTranscriptionPromptSummary: action.sessionTranscriptionPromptSummary,
+        sessionTranscriptionLogprobsEnabled: action.sessionTranscriptionLogprobsEnabled,
         sessionAudioRuntimeMode: action.sessionAudioRuntimeMode,
         sessionTurnDetectionType: action.sessionTurnDetectionType,
         sessionSilenceDurationMs: action.sessionSilenceDurationMs,
+      };
+    case "bad_session_auto_recovered":
+      return {
+        ...state,
+        badSessionAutoRecovered: action.value,
       };
     case "snapshot":
       return {
@@ -295,9 +485,16 @@ function reducer(
         sessionId: null,
         sessionExpiresAt: null,
         sessionModel: state.sessionModel,
+        sessionTranscriptionLanguage: state.sessionTranscriptionLanguage,
+        sessionTranscriptionPromptSummary: state.sessionTranscriptionPromptSummary,
+        sessionTranscriptionLogprobsEnabled: state.sessionTranscriptionLogprobsEnabled,
         sessionAudioRuntimeMode: state.sessionAudioRuntimeMode,
         sessionTurnDetectionType: state.sessionTurnDetectionType,
         sessionSilenceDurationMs: state.sessionSilenceDurationMs,
+        badSessionAutoRecovered:
+          action.preserveBadSessionAutoRecovered ?? false
+            ? state.badSessionAutoRecovered
+            : false,
         peerConnectionState: "new",
         iceConnectionState: "new",
         signalingState: "stable",
@@ -323,6 +520,8 @@ export function useRealtimeController(options: {
   const debugPerfLogsRef = useRef(options.debugPerfLogs ?? false);
   const appStatusRef = useRef(initialState.appStatus);
   const stopRef = useRef<(() => void) | null>(null);
+  const startRef = useRef<(() => Promise<void>) | null>(null);
+  const hasAutoRecoveredBadSessionRef = useRef(false);
 
   const activeConnectionRef = useRef<RealtimeBrowserConnection | null>(null);
   const pendingStreamRef = useRef<MediaStream | null>(null);
@@ -985,6 +1184,30 @@ export function useRealtimeController(options: {
     [getSelectedLanguagePair, options.scenario, scheduleTranslation],
   );
 
+  const triggerBadSessionAutoRecovery = useCallback((reason: string) => {
+    if (hasAutoRecoveredBadSessionRef.current) {
+      return;
+    }
+
+    hasAutoRecoveredBadSessionRef.current = true;
+    dispatch({
+      type: "bad_session_auto_recovered",
+      value: true,
+    });
+
+    if (debugPerfLogsRef.current) {
+      console.warn("[realtime] Auto-recovering suspicious first transcript session", {
+        reason,
+      });
+    }
+
+    stopRef.current?.();
+
+    window.setTimeout(() => {
+      void startRef.current?.();
+    }, BAD_SESSION_AUTO_RESTART_DELAY_MS);
+  }, []);
+
   const applyTranscriptEvent = useCallback(
     (event: ParsedRealtimeEvent) => {
       if (event.kind === "ignored") {
@@ -1051,6 +1274,24 @@ export function useRealtimeController(options: {
         );
 
         if (finalizedSegment) {
+          const isFirstFinalTranscript = transcriptSnapshot.finalizedSegments.length === 1;
+          const badFirstTranscriptReason =
+            isFirstFinalTranscript &&
+            !hasAutoRecoveredBadSessionRef.current
+              ? detectBadFirstTranscriptReason({
+                  directionMode: options.directionMode,
+                  sourceLanguage: selectedLanguagePair.languages[0],
+                  targetLanguage: selectedLanguagePair.languages[1],
+                  transcript: finalizedSegment.text,
+                  avgLogprob: event.avgLogprob,
+                })
+              : null;
+
+          if (badFirstTranscriptReason) {
+            triggerBadSessionAutoRecovery(badFirstTranscriptReason);
+            return;
+          }
+
           void handleSuggestion(transcriptSnapshot, {
             segmentId: finalizedSegment.segmentId,
             revision: finalizedSegment.revision,
@@ -1066,7 +1307,9 @@ export function useRealtimeController(options: {
       getSelectedLanguagePair,
       markPerf,
       options.scenario,
+      options.directionMode,
       syncTranslationSnapshot,
+      triggerBadSessionAutoRecovery,
     ],
   );
 
@@ -1102,6 +1345,7 @@ export function useRealtimeController(options: {
       type: "reset",
       preserveFinalizedSegments: true,
       preserveTranslatedSegments: true,
+      preserveBadSessionAutoRecovered: hasAutoRecoveredBadSessionRef.current,
     });
   }, [
     clearBackgroundStopTimer,
@@ -1159,8 +1403,13 @@ export function useRealtimeController(options: {
     operationIdRef.current = currentOperationId;
     backgroundHiddenSinceRef.current = null;
     backgroundStopTriggeredRef.current = false;
+    hasAutoRecoveredBadSessionRef.current = false;
     clearBackgroundStopTimer();
     dispatch({ type: "clear_error" });
+    dispatch({
+      type: "bad_session_auto_recovered",
+      value: false,
+    });
     resetTranscriptSession();
     resetTranslationSession();
     markPerf("micStartAt");
@@ -1213,8 +1462,9 @@ export function useRealtimeController(options: {
       abortControllerRef.current = abortController;
 
       const realtimeSession = await requestRealtimeSession({
-        sourceLanguage:
-          options.directionMode === "auto_selected_pair" ? undefined : options.sourceLanguage,
+        directionMode: options.directionMode,
+        sourceLanguage: options.sourceLanguage,
+        targetLanguage: options.targetLanguage,
         audioRuntimeMode: options.audioRuntimeMode,
         signal: abortController.signal,
       });
@@ -1229,6 +1479,9 @@ export function useRealtimeController(options: {
         sessionId: realtimeSession.session.id,
         sessionExpiresAt: realtimeSession.clientSecret.expiresAt,
         sessionModel: realtimeSession.session.model,
+        sessionTranscriptionLanguage: realtimeSession.session.language,
+        sessionTranscriptionPromptSummary: realtimeSession.session.promptSummary,
+        sessionTranscriptionLogprobsEnabled: realtimeSession.session.logprobsEnabled,
         sessionAudioRuntimeMode: realtimeSession.session.audioRuntimeMode,
         sessionTurnDetectionType: realtimeSession.session.turnDetection.type,
         sessionSilenceDurationMs: realtimeSession.session.turnDetection.silenceDurationMs,
@@ -1321,7 +1574,15 @@ export function useRealtimeController(options: {
             }
 
             const parsedEvent = parseRealtimeEvent(event);
-            applyTranscriptEvent(parsedEvent);
+            const enrichedEvent =
+              parsedEvent.kind === "transcript_completed"
+                ? {
+                    ...parsedEvent,
+                    avgLogprob: readAverageTranscriptionLogprob(event),
+                  }
+                : parsedEvent;
+
+            applyTranscriptEvent(enrichedEvent);
           },
         },
       });
@@ -1407,6 +1668,7 @@ export function useRealtimeController(options: {
     options.audioRuntimeMode,
     options.directionMode,
     options.sourceLanguage,
+    options.targetLanguage,
     recordRealtimeEvent,
     resetTranscriptSession,
     resetTranslationSession,
@@ -1420,6 +1682,10 @@ export function useRealtimeController(options: {
   useEffect(() => {
     stopRef.current = stop;
   }, [stop]);
+
+  useEffect(() => {
+    startRef.current = start;
+  }, [start]);
 
   useEffect(() => {
     appStatusRef.current = state.appStatus;

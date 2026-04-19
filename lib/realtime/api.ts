@@ -1,4 +1,7 @@
-import type { SupportedLanguageCode } from "@/types/config";
+import type {
+  SupportedLanguageCode,
+  TranslationDirectionMode,
+} from "@/types/config";
 import type {
   ApiErrorResponse,
   AudioRuntimeMode,
@@ -6,7 +9,9 @@ import type {
 } from "@/types/realtime";
 
 export async function requestRealtimeSession(options: {
+  directionMode?: TranslationDirectionMode;
   sourceLanguage?: SupportedLanguageCode;
+  targetLanguage?: SupportedLanguageCode;
   audioRuntimeMode?: AudioRuntimeMode;
   signal?: AbortSignal;
 }) {
@@ -17,7 +22,9 @@ export async function requestRealtimeSession(options: {
     },
     cache: "no-store",
     body: JSON.stringify({
+      directionMode: options.directionMode,
       sourceLanguage: options.sourceLanguage,
+      targetLanguage: options.targetLanguage,
       audioRuntimeMode: options.audioRuntimeMode,
     }),
     signal: options.signal,

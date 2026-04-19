@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
 
 import { createRealtimeSession, RealtimeSessionCreationError } from "@/lib/openai/realtime-session";
-import { isSupportedLanguageCode } from "@/lib/languages/config";
+import {
+  isBidirectionalAutoLanguagePairSupported,
+  isSupportedLanguageCode,
+} from "@/lib/languages/config";
+import type { TranslationDirectionMode } from "@/types/config";
 import type {
   ApiErrorResponse,
   AudioRuntimeMode,
@@ -12,6 +16,10 @@ export const runtime = "nodejs";
 
 function normalizeAudioRuntimeMode(value: string | undefined): AudioRuntimeMode {
   return value === "noisy" ? "noisy" : "normal";
+}
+
+function normalizeDirectionMode(value: string | undefined): TranslationDirectionMode {
+  return value === "auto_selected_pair" ? "auto_selected_pair" : "fixed";
 }
 
 export async function POST(request: Request) {
@@ -47,9 +55,63 @@ export async function POST(request: Request) {
     );
   }
 
+  if (payload.targetLanguage && !isSupportedLanguageCode(payload.targetLanguage)) {
+    return NextResponse.json<ApiErrorResponse>(
+      {
+        ok: false,
+        error: {
+          code: "unsupported_target_language",
+          message: "targetLanguage 不在当前支持范围内。",
+          status: 400,
+        },
+      },
+      { status: 400, headers: { "Cache-Control": "no-store" } },
+    );
+  }
+
+  const directionMode = normalizeDirectionMode(payload.directionMode);
+
+  if (directionMode === "fixed" && !payload.sourceLanguage) {
+    return NextResponse.json<ApiErrorResponse>(
+      {
+        ok: false,
+        error: {
+          code: "missing_source_language",
+          message: "fixed 模式下必须提供 sourceLanguage。",
+          status: 400,
+        },
+      },
+      { status: 400, headers: { "Cache-Control": "no-store" } },
+    );
+  }
+
+  if (
+    directionMode === "auto_selected_pair" &&
+    (!payload.sourceLanguage ||
+      !payload.targetLanguage ||
+      !isBidirectionalAutoLanguagePairSupported(
+        payload.sourceLanguage,
+        payload.targetLanguage,
+      ))
+  ) {
+    return NextResponse.json<ApiErrorResponse>(
+      {
+        ok: false,
+        error: {
+          code: "unsupported_auto_language_pair",
+          message: "当前自动互译语言对不在支持范围内。",
+          status: 400,
+        },
+      },
+      { status: 400, headers: { "Cache-Control": "no-store" } },
+    );
+  }
+
   try {
     const session = await createRealtimeSession({
+      directionMode,
       sourceLanguage: payload.sourceLanguage,
+      targetLanguage: payload.targetLanguage,
       audioRuntimeMode: normalizeAudioRuntimeMode(payload.audioRuntimeMode),
     });
 
