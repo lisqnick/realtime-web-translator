@@ -354,19 +354,18 @@
   transform: translateY(-50%);
   z-index: 12;
   pointer-events: none;
-  transition:
-    left 240ms ease,
-    top 240ms ease,
-    right 240ms ease,
-    transform 240ms ease;
 }
 
 .controlDotDockGhostCentered {
-  left: 50%;
-  top: 50%;
+  position: fixed;
+  inset: 0;
+  left: auto;
   right: auto;
+  top: auto;
   bottom: auto;
-  transform: translate(-50%, -50%);
+  transform: none;
+  display: grid;
+  place-items: center;
 }
 
 .controlDot {
