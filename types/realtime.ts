@@ -1,5 +1,6 @@
 import type {
   MicPermissionStatus,
+  ScenarioId,
   SupportedLanguageCode,
   TranslationDirectionMode,
   TranslationAppStatus,
@@ -39,6 +40,7 @@ export interface RealtimeSessionRequest {
   directionMode?: TranslationDirectionMode;
   sourceLanguage?: SupportedLanguageCode;
   targetLanguage?: SupportedLanguageCode;
+  scenario?: ScenarioId;
   audioRuntimeMode?: AudioRuntimeMode;
 }
 

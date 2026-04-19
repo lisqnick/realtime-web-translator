@@ -1465,6 +1465,7 @@ export function useRealtimeController(options: {
         directionMode: options.directionMode,
         sourceLanguage: options.sourceLanguage,
         targetLanguage: options.targetLanguage,
+        scenario: options.scenario,
         audioRuntimeMode: options.audioRuntimeMode,
         signal: abortController.signal,
       });
@@ -1667,6 +1668,7 @@ export function useRealtimeController(options: {
     markPerf,
     options.audioRuntimeMode,
     options.directionMode,
+    options.scenario,
     options.sourceLanguage,
     options.targetLanguage,
     recordRealtimeEvent,

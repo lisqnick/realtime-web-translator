@@ -5,7 +5,8 @@ import {
   isBidirectionalAutoLanguagePairSupported,
   isSupportedLanguageCode,
 } from "@/lib/languages/config";
-import type { TranslationDirectionMode } from "@/types/config";
+import { isScenarioId } from "@/lib/scenarios/config";
+import type { ScenarioId, TranslationDirectionMode } from "@/types/config";
 import type {
   ApiErrorResponse,
   AudioRuntimeMode,
@@ -20,6 +21,10 @@ function normalizeAudioRuntimeMode(value: string | undefined): AudioRuntimeMode 
 
 function normalizeDirectionMode(value: string | undefined): TranslationDirectionMode {
   return value === "auto_selected_pair" ? "auto_selected_pair" : "fixed";
+}
+
+function normalizeScenario(value: string | undefined): ScenarioId {
+  return isScenarioId(value) ? value : "general";
 }
 
 export async function POST(request: Request) {
@@ -70,6 +75,7 @@ export async function POST(request: Request) {
   }
 
   const directionMode = normalizeDirectionMode(payload.directionMode);
+  const scenario = normalizeScenario(payload.scenario);
 
   if (directionMode === "fixed" && !payload.sourceLanguage) {
     return NextResponse.json<ApiErrorResponse>(
@@ -112,6 +118,7 @@ export async function POST(request: Request) {
       directionMode,
       sourceLanguage: payload.sourceLanguage,
       targetLanguage: payload.targetLanguage,
+      scenario,
       audioRuntimeMode: normalizeAudioRuntimeMode(payload.audioRuntimeMode),
     });
 

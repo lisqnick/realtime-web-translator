@@ -1,4 +1,5 @@
 import type {
+  ScenarioId,
   SupportedLanguageCode,
   TranslationDirectionMode,
 } from "@/types/config";
@@ -12,6 +13,7 @@ export async function requestRealtimeSession(options: {
   directionMode?: TranslationDirectionMode;
   sourceLanguage?: SupportedLanguageCode;
   targetLanguage?: SupportedLanguageCode;
+  scenario?: ScenarioId;
   audioRuntimeMode?: AudioRuntimeMode;
   signal?: AbortSignal;
 }) {
@@ -25,6 +27,7 @@ export async function requestRealtimeSession(options: {
       directionMode: options.directionMode,
       sourceLanguage: options.sourceLanguage,
       targetLanguage: options.targetLanguage,
+      scenario: options.scenario,
       audioRuntimeMode: options.audioRuntimeMode,
     }),
     signal: options.signal,

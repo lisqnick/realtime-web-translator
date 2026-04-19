@@ -2,6 +2,7 @@ import { getAudioRuntimeConfig, getAudioRuntimeTurnDetectionConfig } from "@/con
 import { serverEnv } from "@/config/env";
 import { buildRealtimeTranscriptionPrompt, buildRealtimeTranscriptionPromptSummary } from "@/lib/realtime/transcription-prompt";
 import type {
+  ScenarioId,
   SupportedLanguageCode,
   TranslationDirectionMode,
 } from "@/types/config";
@@ -18,6 +19,7 @@ interface CreateRealtimeSessionInput {
   directionMode?: TranslationDirectionMode;
   sourceLanguage?: SupportedLanguageCode;
   targetLanguage?: SupportedLanguageCode;
+  scenario?: ScenarioId;
   audioRuntimeMode?: AudioRuntimeMode;
 }
 
@@ -131,6 +133,7 @@ export function buildRealtimeSessionConfig({
   directionMode = "fixed",
   sourceLanguage,
   targetLanguage,
+  scenario,
   audioRuntimeMode = "normal",
 }: CreateRealtimeSessionInput) {
   const audioRuntimeConfig = getAudioRuntimeConfig(audioRuntimeMode);
@@ -139,6 +142,7 @@ export function buildRealtimeSessionConfig({
     directionMode,
     sourceLanguage,
     targetLanguage,
+    scenario,
   });
 
   return {
@@ -173,6 +177,7 @@ export async function createRealtimeSession({
   directionMode = "fixed",
   sourceLanguage,
   targetLanguage,
+  scenario,
   audioRuntimeMode = "normal",
 }: CreateRealtimeSessionInput): Promise<RealtimeSessionResponse> {
   if (!serverEnv.openAiApiKey) {
@@ -187,6 +192,7 @@ export async function createRealtimeSession({
     directionMode,
     sourceLanguage,
     targetLanguage,
+    scenario,
     audioRuntimeMode,
   });
   const clientRequestId = crypto.randomUUID();
@@ -267,6 +273,7 @@ export async function createRealtimeSession({
         directionMode,
         sourceLanguage,
         targetLanguage,
+        scenario,
       }),
       logprobsEnabled: include.includes(
         "item.input_audio_transcription.logprobs",

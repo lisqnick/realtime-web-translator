@@ -1,5 +1,8 @@
+import { getSttHintTerms } from "@/lib/glossary/stt-hints";
 import { getLanguageConfig } from "@/lib/languages/config";
+import { getScenarioById } from "@/lib/scenarios/config";
 import type {
+  ScenarioId,
   SupportedLanguageCode,
   TranslationDirectionMode,
 } from "@/types/config";
@@ -8,6 +11,7 @@ interface BuildRealtimeTranscriptionPromptInput {
   directionMode?: TranslationDirectionMode;
   sourceLanguage?: SupportedLanguageCode;
   targetLanguage?: SupportedLanguageCode;
+  scenario?: ScenarioId;
 }
 
 const EXTRA_FORBIDDEN_LANGUAGE_HINTS = ["Korean"];
@@ -52,9 +56,43 @@ function buildFixedRealtimeTranscriptionPrompt(sourceLanguage: SupportedLanguage
   return lines.join(" ");
 }
 
+function buildScenarioTranscriptionHints(
+  scenario: ScenarioId | undefined,
+) {
+  if (!scenario || scenario === "general") {
+    return "The conversation is everyday spoken communication.";
+  }
+
+  switch (scenario) {
+    case "shopping":
+      return "The conversation may include product names, price, size, color, stock, discount, payment, and receipt.";
+    case "medical":
+      return "The conversation may include symptoms, medicine names, dosage, allergy, fever, pain, appointment, and prescription.";
+    case "banking":
+      return "The conversation may include account, transfer, ID verification, limits, fees, address proof, and credit card terms.";
+    case "child_communication":
+      return "The conversation may include simple daily expressions, family terms, school words, and child-related vocabulary.";
+    default:
+      return null;
+  }
+}
+
+function buildHintLine(
+  input: BuildRealtimeTranscriptionPromptInput,
+) {
+  const hintTerms = getSttHintTerms(input);
+
+  if (hintTerms.length === 0) {
+    return null;
+  }
+
+  return `Important names and terms may include: ${hintTerms.join(", ")}.`;
+}
+
 function buildAutoPairRealtimeTranscriptionPrompt(
   leftLanguage: SupportedLanguageCode,
   rightLanguage: SupportedLanguageCode,
+  scenario?: ScenarioId,
 ) {
   const pairNames = [getTranscriptionLanguageName(leftLanguage), getTranscriptionLanguageName(rightLanguage)];
   const excludedLanguageHints = [
@@ -82,6 +120,21 @@ function buildAutoPairRealtimeTranscriptionPrompt(
     lines.push("If the speech is Chinese, output Simplified Chinese.");
   }
 
+  const scenarioHints = buildScenarioTranscriptionHints(scenario);
+  if (scenarioHints) {
+    lines.push(scenarioHints);
+  }
+
+  const hintLine = buildHintLine({
+    directionMode: "auto_selected_pair",
+    sourceLanguage: leftLanguage,
+    targetLanguage: rightLanguage,
+    scenario,
+  });
+  if (hintLine) {
+    lines.push(hintLine);
+  }
+
   return lines.join(" ");
 }
 
@@ -96,11 +149,27 @@ export function buildRealtimeTranscriptionPrompt(
     return buildAutoPairRealtimeTranscriptionPrompt(
       input.sourceLanguage,
       input.targetLanguage,
+      input.scenario,
     );
   }
 
   const fixedSourceLanguage = input.sourceLanguage ?? "zh-CN";
-  return buildFixedRealtimeTranscriptionPrompt(fixedSourceLanguage);
+  const lines = [buildFixedRealtimeTranscriptionPrompt(fixedSourceLanguage)];
+  const scenarioHints = buildScenarioTranscriptionHints(input.scenario);
+  if (scenarioHints) {
+    lines.push(scenarioHints);
+  }
+  const hintLine = buildHintLine({
+    directionMode: "fixed",
+    sourceLanguage: fixedSourceLanguage,
+    targetLanguage: input.targetLanguage,
+    scenario: input.scenario,
+  });
+  if (hintLine) {
+    lines.push(hintLine);
+  }
+
+  return lines.join(" ");
 }
 
 export function buildRealtimeTranscriptionPromptSummary(
@@ -113,9 +182,22 @@ export function buildRealtimeTranscriptionPromptSummary(
   ) {
     const leftLabel = getLanguageConfig(input.sourceLanguage)?.label ?? input.sourceLanguage;
     const rightLabel = getLanguageConfig(input.targetLanguage)?.label ?? input.targetLanguage;
-    return `auto pair: ${leftLabel} <-> ${rightLabel}`;
+    const scenarioLabel = input.scenario
+      ? (getScenarioById(input.scenario)?.label ?? input.scenario)
+      : "通用";
+    const hints = getSttHintTerms(input).length;
+    return `auto pair: ${leftLabel} <-> ${rightLabel} | scenario: ${scenarioLabel} | hints: ${hints}`;
   }
 
   const sourceLanguage = input.sourceLanguage ?? "zh-CN";
-  return `fixed: ${getLanguageConfig(sourceLanguage)?.label ?? sourceLanguage}`;
+  const scenarioLabel = input.scenario
+    ? (getScenarioById(input.scenario)?.label ?? input.scenario)
+    : "通用";
+  const hints = getSttHintTerms({
+    directionMode: "fixed",
+    sourceLanguage,
+    targetLanguage: input.targetLanguage,
+    scenario: input.scenario,
+  }).length;
+  return `fixed: ${getLanguageConfig(sourceLanguage)?.label ?? sourceLanguage} | scenario: ${scenarioLabel} | hints: ${hints}`;
 }
