@@ -198,6 +198,10 @@
   color: rgba(249, 252, 255, 0.96);
 }
 
+.sourceText {
+  font-size: 0.94rem;
+}
+
 .inlineError {
   color: var(--danger);
   font-size: 0.9rem;
