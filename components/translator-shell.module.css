@@ -371,9 +371,9 @@
     0 0 18px var(--dot-glow, rgba(84, 184, 255, 0.1));
   pointer-events: auto;
   transition:
-    border-color 160ms ease,
-    opacity 160ms ease,
-    box-shadow 160ms ease;
+    border-color 220ms ease,
+    opacity 220ms ease,
+    box-shadow 220ms ease;
 }
 
 .controlDot--success {
@@ -389,6 +389,11 @@
 .controlDot--danger {
   --dot-ring: rgba(255, 96, 118, 0.82);
   --dot-glow: rgba(255, 96, 118, 0.14);
+}
+
+.controlDotGhost {
+  --dot-ring: rgba(255, 96, 118, 0.3);
+  --dot-glow: rgba(255, 96, 118, 0.05);
 }
 
 .controlDot--disabled {

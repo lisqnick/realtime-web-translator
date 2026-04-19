@@ -220,7 +220,13 @@ export function TranslatorShell({ runtimeDefaults }: TranslatorShellProps) {
             ? "正在创建会话"
             : state.appStatus === "connecting_realtime"
               ? "正在连接"
-              : "开始翻译";
+            : "开始翻译";
+  const hasVisibleTranscriptContent =
+    state.liveSourceText.trim().length > 0 ||
+    state.finalizedSegments.length > 0 ||
+    state.bubbles.length > 0;
+  const isGhostListeningRing =
+    state.appStatus === "listening" && hasVisibleTranscriptContent;
 
   const perfSummary = getRelativePerfDurations(state.perfSnapshot);
   const browserUnsupported =
@@ -756,6 +762,8 @@ export function TranslatorShell({ runtimeDefaults }: TranslatorShellProps) {
         <button
           type="button"
           className={`${styles.controlDot} ${styles[`controlDot--${controlDotTone}`]} ${
+            isGhostListeningRing ? styles.controlDotGhost : ""
+          } ${
             controlDotDisabled ? styles["controlDot--disabled"] : ""
           }`}
           disabled={controlDotDisabled}
